@@ -8,10 +8,17 @@
 void vfs_explore(vnode_t* node)
 {
     assert(node);
-    if (node->flags & VNODE_EXPLORED) return;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
-    __vfs_unload_children(node);
-    // TODO: Actually load nodes
+    if (node->flags & VNODE_EXPLORED)
+    {
+        release_spinlock_noint(&node->lock, flags);
+        return;
+    }
+    release_spinlock_noint(&node->lock, flags);
+    vfs_unload_children(node);
+
+    
+    flags = acquire_spinlock_noint(&node->lock);
     node->flags |= VNODE_EXPLORED;
     release_spinlock_noint(&node->lock, flags);
 }

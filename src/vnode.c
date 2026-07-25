@@ -39,19 +39,23 @@ void vfs_add_new_node(vnode_t* node, vnode_t* new)
     release_spinlock_noint(&node->lock, flags);
 }
 
-void __vfs_unload_children(vnode_t* node)
+void vfs_unload_children(vnode_t* node)
 {
     assert(node);
-    while (node->children)
+    uint32_t flags = acquire_spinlock_noint(&node->lock);
+    vnode_t* child = node->children;
+    node->children = NULL;
+    release_spinlock_noint(&node->lock, flags);
+    while (child)
     {
-        node->children->reference_count--;
-        vnode_t* next = node->children->next;
-        if (node->children->reference_count <= 0)
+        child->reference_count--;
+        vnode_t* next = child->next;
+        if (child->reference_count <= 0)
         {
-            __vfs_unload_children(node->children);
-            vfs_node_destroy(node->children);
+            vfs_unload_children(child);
+            vfs_node_destroy(child);
         }
-        node->children = next;
+        child = next;
     }
 }
 

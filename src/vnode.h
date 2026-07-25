@@ -21,6 +21,6 @@ struct vnode
 extern vnode_t* vfs_root_node;
 
 vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st);
-void __vfs_unload_children(vnode_t* node);
+void vfs_unload_children(vnode_t* node);
 void vfs_node_destroy(vnode_t* node);
 void vfs_log_structure(vnode_t* node);
