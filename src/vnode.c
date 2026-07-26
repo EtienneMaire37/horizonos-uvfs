@@ -1,6 +1,8 @@
 #include "vnode.h"
+#include "flags.h"
 #include "spinlock.h"
 #include "log.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
@@ -23,7 +25,7 @@ void vfs_create_root_node()
     st.st_gid = 0;
     st.st_uid = 0;
 
-    st.st_ino = 1;
+    st.st_ino = vfs_generate_ino();
     st.st_mode = S_IFDIR | S_IRWXO | S_IRWXG;
 
     st.st_nlink = 1;
@@ -100,6 +102,7 @@ void vnode_free(const struct ref* ref)
     vnode_t* next = node->next;
     // Assume a parent is always referenced from higher
     vfs_total_nodes--;
+    free(node->name);
     free(node);
     if (child)
         ref_dec(&child->ref);
@@ -113,7 +116,7 @@ void vfs_log_structure_helper(vnode_t* node, int depth)
 {
     assert(node);
 
-    LOG("%*s- \"%s\" (inode %ld)", depth, "", node->name, (long)node->st.st_ino);
+    LOG("%*s- \"%s\" (inode %ld)%s", depth, "", node->name, (long)node->st.st_ino, node->flags & VNODE_EXPLORED ? "" : " <NOT EXPLORED>");
     vnode_t* child = node->children;
     while (child)
     {
@@ -127,11 +130,29 @@ void vfs_log_structure(vnode_t* node)
     vfs_log_structure_helper(node, 0);
 }
 
+size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t bufsiz)
+{
+    assert(node);
+    size_t offset = 0;
+    uint32_t flags = acquire_spinlock_noint(&node->lock);
+    if (node->parent)
+    {
+        offset = vfs_get_absolute_path_to_node_helper(node->parent, buf, bufsiz);
+        if (offset < bufsiz)
+            offset += snprintf(&buf[offset], bufsiz, "/%*s", (int)(bufsiz - offset), node->name);
+    }
+    release_spinlock_noint(&node->lock, flags);
+    return offset;
+}
+
 void vfs_get_absolute_path_to_node(vnode_t* node, char* buf, size_t bufsiz)
 {
     assert(bufsiz > 0);
     assert(node);
-    buf[0] = 0;
+    if (node->parent)
+        buf[vfs_get_absolute_path_to_node_helper(node, buf, bufsiz - 1)] = 0;
+    else
+        strcpy(buf, "/");
 }
 
 size_t vfs_count_nodes(vnode_t* node)
@@ -163,4 +184,10 @@ bool vfs_verify_tree_integrity()
     }
     #endif
     return ret;
+}
+
+ino_t vfs_generate_ino()
+{
+    static ino_t ino = 1;
+    return ino++;
 }
