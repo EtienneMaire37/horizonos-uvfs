@@ -116,7 +116,7 @@ void vfs_log_structure_helper(vnode_t* node, int depth)
 {
     assert(node);
 
-    LOG("%*s- \"%s\" (inode %ld)%s", depth, "", node->name, (long)node->st.st_ino, ((node->flags & VNODE_EXPLORED) || (!S_ISDIR(node->st.st_mode))) ? "" : " <NOT EXPLORED>");
+    LOG(DEBUG, "%*s- \"%s\" (inode %ld)%s", depth, "", node->name, (long)node->st.st_ino, ((node->flags & VNODE_EXPLORED) || (!S_ISDIR(node->st.st_mode))) ? "" : " <NOT EXPLORED>");
     vnode_t* child = node->children;
     while (child)
     {
@@ -184,8 +184,8 @@ bool vfs_verify_tree_integrity()
     #ifndef NDEBUG
     if (!ret)
     {
-        LOG("Total refcounted nodes: %zu", vfs_total_nodes);
-        LOG("Total nodes in tree: %zu", nodes);
+        LOG(DEBUG, "Total refcounted nodes: %zu", vfs_total_nodes);
+        LOG(DEBUG, "Total nodes in tree: %zu", nodes);
         abort();
     }
     #endif
