@@ -11,7 +11,7 @@
 
 void vfs_explore(vnode_t* node)
 {
-    assert(node);
+    if (!node) return;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
     if (node->flags & VNODE_EXPLORED)
     {
@@ -23,7 +23,10 @@ void vfs_explore(vnode_t* node)
 
     {
         char path[PATH_MAX];
-        vfs_get_absolute_path_to_node(node, path, sizeof(path));
+        char current_path[PATH_MAX];
+        size_t len = vfs_get_absolute_path_to_node(node, path, sizeof(path));
+        memcpy(current_path, path, PATH_MAX);
+
         LOG("vfs_explore: Exploring path \"%s\"", path);
         DIR* dir = opendir(path);
         if (dir)
@@ -33,9 +36,14 @@ void vfs_explore(vnode_t* node)
             {
                 if (strcmp(ent->d_name, ".") && strcmp(ent->d_name, ".."))
                 {
+                    sprintf(&current_path[len], "%s", ent->d_name);
+                    current_path[len - 1] = '/';
                     struct stat st;
-                    st.st_ino = vfs_generate_ino();
-                    vfs_add_new_child_node(node, ent->d_name, &st);
+                    if (stat(current_path, &st) == 0)
+                    {
+                        st.st_ino = vfs_generate_ino();
+                        vfs_add_new_child_node(node, ent->d_name, &st);
+                    }
                 }
             }
             closedir(dir);

@@ -116,7 +116,7 @@ void vfs_log_structure_helper(vnode_t* node, int depth)
 {
     assert(node);
 
-    LOG("%*s- \"%s\" (inode %ld)%s", depth, "", node->name, (long)node->st.st_ino, node->flags & VNODE_EXPLORED ? "" : " <NOT EXPLORED>");
+    LOG("%*s- \"%s\" (inode %ld)%s", depth, "", node->name, (long)node->st.st_ino, ((node->flags & VNODE_EXPLORED) || (!S_ISDIR(node->st.st_mode))) ? "" : " <NOT EXPLORED>");
     vnode_t* child = node->children;
     while (child)
     {
@@ -139,20 +139,26 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t buf
     {
         offset = vfs_get_absolute_path_to_node_helper(node->parent, buf, bufsiz);
         if (offset < bufsiz)
-            offset += snprintf(&buf[offset], bufsiz, "/%*s", (int)(bufsiz - offset), node->name);
+        {
+            int maxwrite = bufsiz - offset;
+            int len = strlen(node->name);
+            offset += snprintf(&buf[offset], bufsiz, "/%*s", len > maxwrite ? maxwrite : len, node->name);
+        }
     }
     release_spinlock_noint(&node->lock, flags);
     return offset;
 }
 
-void vfs_get_absolute_path_to_node(vnode_t* node, char* buf, size_t bufsiz)
+size_t vfs_get_absolute_path_to_node(vnode_t* node, char* buf, size_t bufsiz)
 {
-    assert(bufsiz > 0);
+    assert(bufsiz > 2);
     assert(node);
+    size_t ret;
     if (node->parent)
-        buf[vfs_get_absolute_path_to_node_helper(node, buf, bufsiz - 1)] = 0;
+        buf[(ret = vfs_get_absolute_path_to_node_helper(node, buf, bufsiz - 1) + 1)] = 0;
     else
-        strcpy(buf, "/");
+        strcpy(buf, (ret = 2, "/"));
+    return ret;
 }
 
 size_t vfs_count_nodes(vnode_t* node)
