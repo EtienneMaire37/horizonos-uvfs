@@ -27,7 +27,7 @@ void vfs_explore(vnode_t* node)
         size_t len = vfs_get_absolute_path_to_node(node, path, sizeof(path));
         memcpy(current_path, path, PATH_MAX);
 
-        LOG(DEBUG, "vfs_explore: Exploring path \"%s\"", path);
+        LOG(TRACE, "vfs_explore: Exploring path \"%s\"", path);
         DIR* dir = opendir(path);
         if (dir)
         {
