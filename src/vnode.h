@@ -34,5 +34,6 @@ void vfs_unload_children(vnode_t* node);
 void vfs_log_structure(vnode_t* node);
 size_t vfs_get_absolute_path_to_node(vnode_t* node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
+vnode_t* vfs_get_vnode_from_path(const char* path);
 
 ino_t vfs_generate_ino();

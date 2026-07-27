@@ -61,14 +61,12 @@ void vfs_add_new_child_node(vnode_t* node, const char* name, const struct stat* 
     uint32_t flags = acquire_spinlock_noint(&node->lock);
 
     child->parent = node;
-    ref_inc(&node->ref);
+    // parent -> child
+    ref_inc(&child->ref);
     child->next = node->children;
+    // do NOT count next/prev references to avoid race conditions
     if (node->children)
-    {
-        ref_inc(&node->children->ref);
-        ref_inc(&node->ref);
         node->children->prev = child;
-    }
     node->children = child;
 
     release_spinlock_noint(&node->lock, flags);
@@ -81,35 +79,35 @@ void vfs_unload_children(vnode_t* node)
     vnode_t* child = node->children;
     node->children = NULL;
     release_spinlock_noint(&node->lock, flags);
-    while (child)
-    {
-        vnode_t* next = child->next;
+    if (child)
         ref_dec(&child->ref);
-        if (next)
-        {
-            next->prev = NULL;
-            ref_dec(&child->ref);
-        }
-        child = next;
-    }
 }
 
 void vnode_free(const struct ref* ref)
 {
     vnode_t* node = container_of(ref, vnode_t, ref);
+    if (!node || !ref)
+        return;
+    // LOG(TRACE, "Destroying inode %zu", (size_t)node->st.st_ino);
     vnode_t* child = node->children;
     vnode_t* prev = node->prev;
     vnode_t* next = node->next;
     // Assume a parent is always referenced from higher
-    vfs_total_nodes--;
-    free(node->name);
-    free(node);
     if (child)
         ref_dec(&child->ref);
     if (prev)
+    {
+        prev->next = NULL;
         ref_dec(&prev->ref);
+    }
     if (next)
+    {
+        next->prev = NULL;
         ref_dec(&next->ref);
+    }
+    vfs_total_nodes--;
+    free(node->name);
+    free(node);
 }
 
 void vfs_log_structure_helper(vnode_t* node, int depth)
@@ -135,6 +133,8 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t buf
     assert(node);
     size_t offset = 0;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
+    // * Race condition !!!! (deadlock if getting path to vnode while unloading for example)
+    // TODO: Implement proper, clean reference counting
     if (node->parent)
     {
         offset = vfs_get_absolute_path_to_node_helper(node->parent, buf, bufsiz);
@@ -196,4 +196,9 @@ ino_t vfs_generate_ino()
 {
     static ino_t ino = 1;
     return ino++;
+}
+
+vnode_t* vfs_get_vnode_from_path(const char* path)
+{
+    return NULL;
 }

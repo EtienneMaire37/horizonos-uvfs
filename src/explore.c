@@ -13,7 +13,7 @@ void vfs_explore(vnode_t* node)
 {
     if (!node) return;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
-    if (node->flags & VNODE_EXPLORED)
+    if ((node->flags & VNODE_EXPLORED) || !S_ISDIR(node->st.st_mode))
     {
         release_spinlock_noint(&node->lock, flags);
         return;
@@ -21,7 +21,8 @@ void vfs_explore(vnode_t* node)
     release_spinlock_noint(&node->lock, flags);
     vfs_unload_children(node);
 
-    {
+    { // ! MT-UNSAFE !!!!!!!!!!!!!!!!!!
+      // *
         char path[PATH_MAX];
         char current_path[PATH_MAX];
         size_t len = vfs_get_absolute_path_to_node(node, path, sizeof(path));
