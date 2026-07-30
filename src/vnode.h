@@ -5,6 +5,7 @@
 #include <stdatomic.h>
 #include <sys/types.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "ref.h"
 #include "flags.h"
@@ -30,7 +31,7 @@ typedef struct
 
 #define VNODE_REF_INIT ((struct ref){vnode_free, 0})
 
-extern vnode_t* _Atomic vfs_root_node;
+extern vnode_ref_t _Atomic vfs_root_node;
 extern _Atomic  size_t vfs_total_nodes;
 
 void vfs_create_root_node();
@@ -46,6 +47,6 @@ void vfs_unload_children(vnode_ref_t node);
 void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
-vnode_t* vfs_get_vnode_from_path(const char* path);
+vnode_ref_t vfs_get_vnode_from_path(const char* path);
 
 ino_t vfs_generate_ino();

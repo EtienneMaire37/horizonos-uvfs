@@ -4,11 +4,10 @@
 #include "log.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include <string.h>
 #include <assert.h>
 
-vnode_t* _Atomic vfs_root_node = NULL;
+vnode_ref_t _Atomic vfs_root_node = (vnode_ref_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
 
 void vfs_create_root_node()
@@ -33,7 +32,7 @@ void vfs_create_root_node()
 
     vnode_t* node = vfs_create_new_vnode("/", &st);
     ref_inc(&node->ref);
-    vfs_root_node = node;
+    vfs_root_node = (vnode_ref_t){ node };
 }
 
 vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
@@ -176,6 +175,7 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t buf
 
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz)
 {
+    LOG(ERROR, "TODO: Implement vfs_get_absolute_path_to_node");
     abort();
     // assert(bufsiz > 2);
     // assert(node);
@@ -187,19 +187,18 @@ size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz)
     // return ret;
 }
 
-size_t vfs_count_nodes(vnode_t* node)
+size_t vfs_count_nodes(vnode_ref_t ref)
 {
+    vnode_t* node = ref.ptr;
     assert(node);
     size_t total = 0;
-    uint32_t flags = acquire_spinlock_noint(&node->lock);
-    vnode_t* child = node->children;
-    while (child)
+    vnode_ref_t child = vnode_dereference(ref, children);
+    while (child.ptr)
     {
         total++;
         total += vfs_count_nodes(child);
-        child = child->next;
+        vnode_move_reference(&child, next);
     }
-    release_spinlock_noint(&node->lock, flags);
     return total;
 }
 
@@ -224,7 +223,7 @@ ino_t vfs_generate_ino()
     return ino++;
 }
 
-vnode_t* vfs_get_vnode_from_path(const char* path)
+vnode_ref_t vfs_get_vnode_from_path(const char* path)
 {
-    return NULL;
+    return (vnode_ref_t){ NULL };
 }
