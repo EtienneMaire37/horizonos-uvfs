@@ -10,6 +10,6 @@ int main()
     vfs_explore(vfs_root_node);
     vfs_explore(vfs_root_node->children);
     // vfs_unload_children(vfs_root_node);
-    vfs_log_structure(vfs_root_node);
+    vfs_log_structure((vnode_ref_t){ vfs_root_node });
     vfs_verify_tree_integrity();
 }

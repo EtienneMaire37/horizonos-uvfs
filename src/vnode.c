@@ -52,33 +52,59 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     return newn;
 }
 
-void vfs_add_new_child_node(vnode_t* node, const char* name, const struct stat* st)
+void vnode_delete_ref(vnode_ref_t* ref)
 {
-    assert(node);
+    if (!ref || !ref->ptr) return;
+    ref_dec(&ref->ptr->ref);
+    *ref = (vnode_ref_t){ NULL };
+}
+
+vnode_ref_t ___vnode_dereference(vnode_ref_t node, size_t field_offset)
+{
+    assert(node.ptr);
+    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    vnode_t* field_value = *(vnode_t**)((uintptr_t)node.ptr + field_offset);
+    if (field_value)
+        ref_inc(&field_value->ref);
+    release_spinlock_noint(&node.ptr->lock, flags);
+    return (vnode_ref_t){ field_value };
+}
+
+void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
+{
+    assert(ref && ref->ptr);
+    vnode_ref_t new_ref = ___vnode_dereference(*ref, field_offset);
+    vnode_delete_ref(ref);
+    *ref = new_ref;
+}
+
+void vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st)
+{
+    assert(node.ptr);
 
     vnode_t* child = vfs_create_new_vnode(name, st);
 
-    uint32_t flags = acquire_spinlock_noint(&node->lock);
+    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
 
-    child->parent = node;
+    child->parent = node.ptr;
     // parent -> child
     ref_inc(&child->ref);
-    child->next = node->children;
+    child->next = node.ptr->children;
     // do NOT count next/prev references to avoid race conditions
-    if (node->children)
-        node->children->prev = child;
-    node->children = child;
+    if (node.ptr->children)
+        node.ptr->children->prev = child;
+    node.ptr->children = child;
 
-    release_spinlock_noint(&node->lock, flags);
+    release_spinlock_noint(&node.ptr->lock, flags);
 }
 
-void vfs_unload_children(vnode_t* node)
+void vfs_unload_children(vnode_ref_t node)
 {
-    assert(node);
-    uint32_t flags = acquire_spinlock_noint(&node->lock);
-    vnode_t* child = node->children;
-    node->children = NULL;
-    release_spinlock_noint(&node->lock, flags);
+    assert(node.ptr);
+    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    vnode_t* child = node.ptr->children;
+    node.ptr->children = NULL;
+    release_spinlock_noint(&node.ptr->lock, flags);
     if (child)
         ref_dec(&child->ref);
 }
@@ -110,31 +136,30 @@ void vnode_free(const struct ref* ref)
     free(node);
 }
 
-void vfs_log_structure_helper(vnode_t* node, int depth)
+void vfs_log_structure_helper(vnode_ref_t node, int depth)
 {
-    assert(node);
+    assert(node.ptr);
 
-    LOG(DEBUG, "%*s- \"%s\" (inode %ld)%s", depth, "", node->name, (long)node->st.st_ino, ((node->flags & VNODE_EXPLORED) || (!S_ISDIR(node->st.st_mode))) ? "" : " <NOT EXPLORED>");
-    vnode_t* child = node->children;
-    while (child)
+    LOG(DEBUG, "%*s- \"%s\" (inode %ld)%s", depth, "", node.ptr->name, (long)node.ptr->st.st_ino, ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(node.ptr->st.st_mode))) ? "" : " <NOT EXPLORED>");
+    vnode_ref_t child = vnode_dereference(node, children);
+    while (child.ptr)
     {
         vfs_log_structure_helper(child, depth + 4);
-        child = child->next;
+        vnode_move_reference(&child, next);
     }
 }
 
-void vfs_log_structure(vnode_t* node)
+void vfs_log_structure(vnode_ref_t node)
 {
     vfs_log_structure_helper(node, 0);
 }
 
 size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t bufsiz)
 {
+    abort();
     assert(node);
     size_t offset = 0;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
-    // * Race condition !!!! (deadlock if getting path to vnode while unloading for example)
-    // TODO: Implement proper, clean reference counting
     if (node->parent)
     {
         offset = vfs_get_absolute_path_to_node_helper(node->parent, buf, bufsiz);
@@ -149,16 +174,17 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t buf
     return offset;
 }
 
-size_t vfs_get_absolute_path_to_node(vnode_t* node, char* buf, size_t bufsiz)
+size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz)
 {
-    assert(bufsiz > 2);
-    assert(node);
-    size_t ret;
-    if (node->parent)
-        buf[(ret = vfs_get_absolute_path_to_node_helper(node, buf, bufsiz - 1) + 1)] = 0;
-    else
-        strcpy(buf, (ret = 2, "/"));
-    return ret;
+    abort();
+    // assert(bufsiz > 2);
+    // assert(node);
+    // size_t ret;
+    // if (node->parent)
+    //     buf[(ret = vfs_get_absolute_path_to_node_helper(node, buf, bufsiz - 1) + 1)] = 0;
+    // else
+    //     strcpy(buf, (ret = 2, "/"));
+    // return ret;
 }
 
 size_t vfs_count_nodes(vnode_t* node)
