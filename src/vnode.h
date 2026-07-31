@@ -13,7 +13,7 @@
 typedef struct vnode vnode_t;
 struct vnode
 {
-    char* name;
+    char* _Atomic name;
     struct stat st;
     vnode_t *_Atomic children, *_Atomic next, *_Atomic prev, *_Atomic parent;
     atomic_flag lock;
@@ -48,5 +48,3 @@ void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
 vnode_ref_t vfs_get_vnode_from_path(const char* path);
-
-ino_t vfs_generate_ino();

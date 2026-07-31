@@ -41,10 +41,7 @@ void vfs_explore(vnode_ref_t ref)
                     current_path[len - 1] = '/';
                     struct stat st;
                     if (stat(current_path, &st) == 0)
-                    {
-                        st.st_ino = vfs_generate_ino();
                         vfs_add_new_child_node(ref, ent->d_name, &st);
-                    }
                 }
             }
             closedir(dir);

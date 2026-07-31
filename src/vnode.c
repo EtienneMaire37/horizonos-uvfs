@@ -24,7 +24,7 @@ void vfs_create_root_node()
     st.st_gid = 0;
     st.st_uid = 0;
 
-    st.st_ino = vfs_generate_ino();
+    st.st_ino = 1;
     st.st_mode = S_IFDIR | S_IRWXO | S_IRWXG;
 
     st.st_nlink = 1;
@@ -153,15 +153,16 @@ void vfs_log_structure(vnode_ref_t node)
     vfs_log_structure_helper(node, 0);
 }
 
-size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t bufsiz)
+size_t vfs_get_absolute_path_to_node_helper(vnode_ref_t ref, char* buf, size_t bufsiz)
 {
-    abort();
+    vnode_t* node = ref.ptr;
     assert(node);
     size_t offset = 0;
-    uint32_t flags = acquire_spinlock_noint(&node->lock);
-    if (node->parent)
+    vnode_ref_t parent_ref = vnode_dereference(ref, parent);
+    if (parent_ref.ptr)
     {
-        offset = vfs_get_absolute_path_to_node_helper(node->parent, buf, bufsiz);
+        offset = vfs_get_absolute_path_to_node_helper(parent_ref, buf, bufsiz);
+        vnode_delete_ref(&parent_ref);
         if (offset < bufsiz)
         {
             int maxwrite = bufsiz - offset;
@@ -169,22 +170,20 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_t* node, char* buf, size_t buf
             offset += snprintf(&buf[offset], bufsiz, "/%*s", len > maxwrite ? maxwrite : len, node->name);
         }
     }
-    release_spinlock_noint(&node->lock, flags);
     return offset;
 }
 
-size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz)
+size_t vfs_get_absolute_path_to_node(vnode_ref_t ref, char* buf, size_t bufsiz)
 {
-    LOG(ERROR, "TODO: Implement vfs_get_absolute_path_to_node");
-    abort();
-    // assert(bufsiz > 2);
-    // assert(node);
-    // size_t ret;
-    // if (node->parent)
-    //     buf[(ret = vfs_get_absolute_path_to_node_helper(node, buf, bufsiz - 1) + 1)] = 0;
-    // else
-    //     strcpy(buf, (ret = 2, "/"));
-    // return ret;
+    vnode_t* node = ref.ptr;
+    assert(bufsiz > 2);
+    assert(node);
+    size_t ret;
+    if (node->parent)
+        buf[(ret = vfs_get_absolute_path_to_node_helper(ref, buf, bufsiz - 1) + 1)] = 0;
+    else
+        strcpy(buf, (ret = 2, "/"));
+    return ret;
 }
 
 size_t vfs_count_nodes(vnode_ref_t ref)
@@ -215,12 +214,6 @@ bool vfs_verify_tree_integrity()
     }
     #endif
     return ret;
-}
-
-ino_t vfs_generate_ino()
-{
-    static ino_t ino = 1;
-    return ino++;
 }
 
 vnode_ref_t vfs_get_vnode_from_path(const char* path)
