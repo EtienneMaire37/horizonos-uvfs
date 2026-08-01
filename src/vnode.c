@@ -8,6 +8,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 vnode_ref_t vfs_root_node = (vnode_ref_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
@@ -27,7 +28,7 @@ void vfs_create_root_node()
     st.st_uid = 0;
 
     st.st_ino = 1;
-    st.st_mode = S_IFDIR | S_IRWXO | S_IRWXG;
+    st.st_mode = 0755 | S_IFDIR;
 
     st.st_nlink = 1;
     st.st_size = 0;
@@ -230,7 +231,8 @@ bool vfs_verify_tree_integrity()
     return ret;
 }
 
-vnode_ref_t vfs_get_vnode_from_path(int* _errno, int uid, int gid, const char* path, vnode_ref_t cwd)
+// TODO: Add symbolic link support
+vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd)
 {
     assert(errno);
     *_errno = 0;
@@ -246,7 +248,22 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, int uid, int gid, const char* p
             while (*path == '/')
                 path++;
             vnode_delete_ref(&current);
-            // TODO: Implement permission check
+            if (*path && !S_ISDIR(child.ptr->st.st_mode))
+            {
+                *_errno = ENOTDIR;
+                return (vnode_ref_t){ NULL };
+            }
+            bool r = (uid == child.ptr->st.st_uid) ? (child.ptr->st.st_mode & S_IRUSR) :
+                    ((gid == child.ptr->st.st_gid) ? (child.ptr->st.st_mode & S_IRGRP) :
+                                                     (child.ptr->st.st_mode & S_IROTH)),
+                 x = (uid == child.ptr->st.st_uid) ? (child.ptr->st.st_mode & S_IXUSR) :
+                    ((gid == child.ptr->st.st_gid) ? (child.ptr->st.st_mode & S_IXGRP) :
+                                                     (child.ptr->st.st_mode & S_IXOTH));
+            if (uid != 0 && (!x || !r))
+            {
+                *_errno = EACCES;
+                return (vnode_ref_t){ NULL };
+            }
             if (!*path)
                 return child;
             current = child;

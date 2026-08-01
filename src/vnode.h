@@ -47,4 +47,4 @@ void vfs_unload_children(vnode_ref_t node);
 void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
-vnode_ref_t vfs_get_vnode_from_path(int* _errno, int uid, int gid, const char* path, vnode_ref_t cwd);
+vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd);
