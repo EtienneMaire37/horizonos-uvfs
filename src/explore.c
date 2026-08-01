@@ -14,11 +14,12 @@ void vfs_explore(vnode_ref_t ref)
     vnode_t* node = ref.ptr;
     if (!node) return;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
-    if ((node->flags & VNODE_EXPLORED) || !S_ISDIR(node->st.st_mode))
+    if ((node->flags & VNODE_EXPLORED) || (node->flags & VNODE_EXPLORING) || !S_ISDIR(node->st.st_mode))
     {
         release_spinlock_noint(&node->lock, flags);
         return;
     }
+    node->flags |= VNODE_EXPLORING;
     release_spinlock_noint(&node->lock, flags);
     vfs_unload_children(ref);
 
@@ -50,5 +51,6 @@ void vfs_explore(vnode_ref_t ref)
 
     flags = acquire_spinlock_noint(&node->lock);
     node->flags |= VNODE_EXPLORED;
+    node->flags &= ~VNODE_EXPLORING;
     release_spinlock_noint(&node->lock, flags);
 }
