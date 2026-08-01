@@ -23,7 +23,7 @@ struct vnode
 
 typedef struct
 {
-    vnode_t* ptr;
+    vnode_t* _Atomic ptr;
 } vnode_ref_t;
 
 #define vnode_dereference(vnode, field)       ___vnode_dereference((vnode), offsetof(vnode_t, field))
@@ -31,7 +31,7 @@ typedef struct
 
 #define VNODE_REF_INIT ((struct ref){vnode_free, 0})
 
-extern vnode_ref_t _Atomic vfs_root_node;
+extern vnode_ref_t vfs_root_node;
 extern _Atomic  size_t vfs_total_nodes;
 
 void vfs_create_root_node();

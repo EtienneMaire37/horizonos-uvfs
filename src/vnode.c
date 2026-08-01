@@ -7,7 +7,7 @@
 #include <string.h>
 #include <assert.h>
 
-vnode_ref_t _Atomic vfs_root_node = (vnode_ref_t){ NULL };
+vnode_ref_t vfs_root_node = (vnode_ref_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
 
 void vfs_create_root_node()
@@ -108,28 +108,40 @@ void vfs_unload_children(vnode_ref_t node)
         ref_dec(&child->ref);
 }
 
-void vnode_free(const struct ref* ref)
+void vnode_free(const struct ref* _ref)
 {
-    vnode_t* node = container_of(ref, vnode_t, ref);
-    if (!node || !ref)
+    vnode_t* node = container_of(_ref, vnode_t, ref);
+    if (node == vfs_root_node.ptr) return;
+    uint32_t flags = acquire_spinlock_noint(&node->lock);
+    if (!node->parent)
+    {
+        release_spinlock_noint(&node->lock, flags);
+        return;
+    }
+    node->parent = NULL;
+    release_spinlock_noint(&node->lock, flags);
+    vnode_ref_t ref = { node };
+    if (!node || !_ref)
         return;
     // LOG(TRACE, "Destroying inode %zu", (size_t)node->st.st_ino);
-    vnode_t* child = node->children;
-    vnode_t* prev = node->prev;
-    vnode_t* next = node->next;
-    // Assume a parent is always referenced from higher
-    if (child)
-        ref_dec(&child->ref);
-    if (prev)
+    vnode_ref_t child = vnode_dereference(ref, children);
+    vnode_ref_t prev = vnode_dereference(ref, prev);
+    vnode_ref_t next = vnode_dereference(ref, next);
+    if (child.ptr)
+        ref_dec(&child.ptr->ref);
+    if (prev.ptr)
     {
-        prev->next = NULL;
-        ref_dec(&prev->ref);
+        prev.ptr->next = NULL;
+        ref_dec(&prev.ptr->ref);
     }
-    if (next)
+    if (next.ptr)
     {
-        next->prev = NULL;
-        ref_dec(&next->ref);
+        next.ptr->prev = NULL;
+        ref_dec(&next.ptr->ref);
     }
+    vnode_delete_ref(&child);
+    vnode_delete_ref(&prev);
+    vnode_delete_ref(&next);
     vfs_total_nodes--;
     free(node->name);
     free(node);
