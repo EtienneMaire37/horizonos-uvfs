@@ -49,7 +49,9 @@ int main()
             }
             if (strcmp(action, "stat") == 0)
             {
-                printf("Mode: %#o\n", node.ptr->st.st_mode);
+                printf("Inode: %lu\n", (unsigned long)node.ptr->st.st_ino);
+                printf("Mode: %#o\n", (unsigned int)node.ptr->st.st_mode);
+                printf("Uid: %u\tGid: %u\n", (unsigned int)node.ptr->st.st_uid, (unsigned int)node.ptr->st.st_gid);
             }
             else if (strcmp(action, "tree") == 0)
             {
