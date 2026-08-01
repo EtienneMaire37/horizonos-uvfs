@@ -247,8 +247,48 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     vfs_explore(current);
     vnode_ref_t child = vnode_dereference(current, children);
     size_t len = strlen_slash(path);
-    while (child.ptr)
+    int fake_entries = 2;
+    while (fake_entries || child.ptr)
     {
+        if (fake_entries)
+        {
+            if (fake_entries == 2)
+            {
+                if (strcmp_slash(".", path) == 0)
+                {
+                    path += len;
+                    while (*path == '/')
+                        path++;
+                    if (!*path)
+                        return current;
+                    len = strlen_slash(path);
+                    fake_entries = 2;
+                    continue;
+                }
+            }
+            else // fake_entries == 1
+            {
+                if (strcmp_slash("..", path) == 0)
+                {
+                    path += len;
+                    while (*path == '/')
+                        path++;
+                    if (current.ptr != vfs_root_node.ptr)
+                    {
+                        vnode_move_reference(&current, parent);
+                        vnode_delete_ref(&child);
+                        child = vnode_dereference(current, children);
+                    }
+                    if (!*path)
+                        return current;
+                    len = strlen_slash(path);
+                    fake_entries = 2;
+                    continue;
+                }
+            }
+            fake_entries--;
+            continue;
+        }
         if (strcmp_slash(child.ptr->name, path) == 0)
         {
             path += len;
@@ -277,6 +317,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             vfs_explore(current);
             child = vnode_dereference(current, children);
             len = strlen_slash(path);
+            fake_entries = 2;
             continue;
         }
         vnode_move_reference(&child, next);
