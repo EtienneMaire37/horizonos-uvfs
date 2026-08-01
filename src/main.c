@@ -5,40 +5,64 @@
 #include "vnode.h"
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 
 int main()
 {
     vfs_create_root_node();
     while (true)
     {
-        printf("File to stat: ");
+        printf("Path to file: ");
         fflush(stdout);
-        char buf[PATH_MAX];
-        char* ret = fgets(buf, sizeof(buf) - 1, stdin);
-        if (!ret)
+        char path[PATH_MAX];
+        char* retp = fgets(path, sizeof(path) - 1, stdin);
+        if (!retp)
         {
             perror("Couldn't read input");
             return 1;
         }
         char ch;
         size_t i = 0;
-        while ((ch = ret[i]))
+        while ((ch = path[i]))
         {
             if (ch == '\n')
-                ret[i] = 0;
+                path[i] = 0;
             i++;
         }
         int _errno;
-        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, buf, (vnode_ref_t){ NULL });
+        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ NULL });
         errno = _errno;
         if (!node.ptr)
             perror("Couldn't read vnode");
         else
         {
-            printf("Mode: %#o\n", node.ptr->st.st_mode);
+            printf("Action? (stat: stat node, tree: get tree from node, unload: unload children) ");
+            fflush(stdout);
+            char action[64];
+            char* reta = fgets(action, sizeof(action) - 1, stdin);
+            i = 0;
+            while ((ch = action[i]))
+            {
+                if (ch == '\n')
+                    action[i] = 0;
+                i++;
+            }
+            if (strcmp(action, "stat") == 0)
+            {
+                printf("Mode: %#o\n", node.ptr->st.st_mode);
+            }
+            else if (strcmp(action, "tree") == 0)
+            {
+                printf("Tree:\n");
+                vfs_log_structure(vfs_root_node);               
+            }
+            else if (strcmp(action, "unload") == 0)
+            {
+                vfs_unload_children(node);
+            }
+            else
+                printf("Invalid action\n");
             vnode_delete_ref(&node);
-            printf("Tree:\n");
-            vfs_log_structure(vfs_root_node);
             vfs_verify_tree_integrity();
         }
     }
