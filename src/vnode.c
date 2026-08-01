@@ -2,10 +2,12 @@
 #include "flags.h"
 #include "spinlock.h"
 #include "log.h"
+#include "util/string.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
 
 vnode_ref_t vfs_root_node = (vnode_ref_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
@@ -228,7 +230,33 @@ bool vfs_verify_tree_integrity()
     return ret;
 }
 
-vnode_ref_t vfs_get_vnode_from_path(const char* path)
+vnode_ref_t vfs_get_vnode_from_path(int* _errno, int uid, int gid, const char* path, vnode_ref_t cwd)
 {
+    assert(errno);
+    *_errno = 0;
+    while (*path == '/') path++;
+    vnode_ref_t current = cwd.ptr ? cwd : vfs_root_node;
+    vnode_ref_t child = vnode_dereference(current, children);
+    size_t len = strlen(child.ptr->name);
+    while (child.ptr)
+    {
+        if (strcmp_slash(child.ptr->name, path) == 0)
+        {
+            path += len;
+            while (*path == '/')
+                path++;
+            vnode_delete_ref(&current);
+            // TODO: Implement permission check
+            if (!*path)
+                return child;
+            current = child;
+            child = vnode_dereference(current, children);
+            len = strlen(child.ptr->name);
+            continue;
+        }
+        vnode_move_reference(&child, next);
+    }
+    vnode_delete_ref(&current);
+    *_errno = ENOENT;
     return (vnode_ref_t){ NULL };
 }
