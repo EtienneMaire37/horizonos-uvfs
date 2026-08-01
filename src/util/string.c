@@ -10,5 +10,16 @@ int strcmp_slash(const char* str1, const char* str2)
         str1++;
         str2++;
     }
-    return (!*str1 || *str1 == '/') && (!*str2 || *str2 == '/');
+    return ((!*str1 || *str1 == '/') && (!*str2 || *str2 == '/')) ? 0 : (int)*str1 - *str2;
+}
+
+size_t strlen_slash(const char* str)
+{
+    size_t len = 0;
+    while (*str && *str != '/')
+    {
+        str++;
+        len++;
+    }
+    return len;
 }

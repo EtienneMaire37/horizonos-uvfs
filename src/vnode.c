@@ -1,4 +1,5 @@
 #include "vnode.h"
+#include "explore.h"
 #include "flags.h"
 #include "spinlock.h"
 #include "log.h"
@@ -234,12 +235,18 @@ bool vfs_verify_tree_integrity()
 // TODO: Add symbolic link support
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd)
 {
-    assert(errno);
+    assert(_errno);
+    assert(path);
+    LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
+    bool absolute_path = *path == '/';
     while (*path == '/') path++;
-    vnode_ref_t current = cwd.ptr ? cwd : vfs_root_node;
+    if (!*path)
+        return absolute_path ? vfs_root_node : cwd;
+    vnode_ref_t current = (cwd.ptr && !absolute_path) ? cwd : vfs_root_node;
+    vfs_explore(current);
     vnode_ref_t child = vnode_dereference(current, children);
-    size_t len = strlen(child.ptr->name);
+    size_t len = strlen_slash(path);
     while (child.ptr)
     {
         if (strcmp_slash(child.ptr->name, path) == 0)
@@ -267,8 +274,9 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             if (!*path)
                 return child;
             current = child;
+            vfs_explore(current);
             child = vnode_dereference(current, children);
-            len = strlen(child.ptr->name);
+            len = strlen_slash(path);
             continue;
         }
         vnode_move_reference(&child, next);
