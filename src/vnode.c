@@ -52,6 +52,8 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     newn->flags = VNODE_INIT;
     newn->parent = NULL;
     newn->ref = VNODE_REF_INIT;
+    newn->fs_specific = NULL;
+    newn->mountpoint.ptr = NULL;
     return newn;
 }
 
@@ -233,8 +235,9 @@ bool vfs_verify_tree_integrity()
 }
 
 // TODO: Add symbolic link support
-vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd)
+vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd, bool follow_symlinks)
 {
+    assert(!follow_symlinks);
     assert(_errno);
     assert(path);
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);

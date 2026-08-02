@@ -30,7 +30,7 @@ int main()
             i++;
         }
         int _errno;
-        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ NULL });
+        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ NULL }, false);
         errno = _errno;
         if (!node.ptr)
             perror("Couldn't read vnode");

@@ -41,8 +41,14 @@ void vfs_explore(vnode_ref_t ref)
                     sprintf(&current_path[len], "%s", ent->d_name);
                     current_path[len - 1] = '/';
                     struct stat st;
-                    if (stat(current_path, &st) == 0)
+                    if (lstat(current_path, &st) == 0)
                         vfs_add_new_child_node(ref, ent->d_name, &st);
+                    else
+                    {
+                        char buf[PATH_MAX + 17];
+                        snprintf(buf, sizeof(buf) - 1, "Couldn't stat \"%s\"", current_path);
+                        perror(buf);
+                    }
                 }
             }
             closedir(dir);

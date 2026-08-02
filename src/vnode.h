@@ -9,8 +9,9 @@
 
 #include "ref.h"
 #include "flags.h"
+#include "vnode_ref.h"
+#include "mountpoint_ref.h"
 
-typedef struct vnode vnode_t;
 struct vnode
 {
     char* _Atomic name;
@@ -19,12 +20,9 @@ struct vnode
     atomic_flag lock;
     vnode_flags_t flags;
     struct ref ref;
+    void* fs_specific;
+    mountpoint_ref_t mountpoint;
 };
-
-typedef struct
-{
-    vnode_t* _Atomic ptr;
-} vnode_ref_t;
 
 #define vnode_dereference(vnode, field)       ___vnode_dereference((vnode), offsetof(vnode_t, field))
 #define vnode_move_reference(vnode, field)       ___vnode_move_reference((vnode), offsetof(vnode_t, field))
@@ -47,4 +45,4 @@ void vfs_unload_children(vnode_ref_t node);
 void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
-vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd);
+vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd, bool follow_symlinks);
