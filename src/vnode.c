@@ -54,6 +54,7 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     newn->ref = VNODE_REF_INIT;
     newn->fs_specific = NULL;
     newn->mountpoint.ptr = NULL;
+    newn->explore = NULL;
     return newn;
 }
 
@@ -247,7 +248,8 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     if (!*path)
         return absolute_path ? vfs_root_node : cwd;
     vnode_ref_t current = (cwd.ptr && !absolute_path) ? cwd : vfs_root_node;
-    vfs_explore(current);
+    if ((*_errno = vfs_explore(current)))
+        return (vnode_ref_t){ NULL };
     vnode_ref_t child = vnode_dereference(current, children);
     size_t len = strlen_slash(path);
     int fake_entries = 2;
@@ -317,7 +319,8 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             if (!*path)
                 return child;
             current = child;
-            vfs_explore(current);
+            if ((*_errno = vfs_explore(current)))
+                return (vnode_ref_t){ NULL };
             child = vnode_dereference(current, children);
             len = strlen_slash(path);
             fake_entries = 2;

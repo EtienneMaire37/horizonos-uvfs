@@ -22,6 +22,8 @@ struct vnode
     struct ref ref;
     void* fs_specific;
     mountpoint_ref_t mountpoint;
+
+    int (*_Atomic explore)(vnode_ref_t); 
 };
 
 #define vnode_dereference(vnode, field)       ___vnode_dereference((vnode), offsetof(vnode_t, field))
