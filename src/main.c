@@ -56,7 +56,7 @@ int main()
             else if (strcmp(action, "tree") == 0)
             {
                 printf("Tree:\n");
-                vfs_log_structure(vfs_root_node);               
+                vfs_log_structure(node);               
             }
             else if (strcmp(action, "unload") == 0)
             {
@@ -66,6 +66,7 @@ int main()
                 printf("Invalid action\n");
             vnode_delete_ref(&node);
             vfs_verify_tree_integrity();
+            
         }
     }
 }

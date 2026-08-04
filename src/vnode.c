@@ -4,6 +4,7 @@
 #include "spinlock.h"
 #include "log.h"
 #include "util/string.h"
+#include "user/posix_explore.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,7 +55,7 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     newn->ref = VNODE_REF_INIT;
     newn->fs_specific = NULL;
     newn->mountpoint.ptr = NULL;
-    newn->explore = NULL;
+    newn->explore = posix_explore;
     return newn;
 }
 

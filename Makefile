@@ -5,6 +5,6 @@ clean:
 
 export CC := gcc
 
-bin/uvfs-test: src/vnode.c src/explore.c src/spinlock.h src/log.h src/explore.h src/vnode.h src/flags.h src/open_file.c src/open_file.h src/util/string.h src/util/string.c src/main.c Makefile
+bin/uvfs-test: src/vnode.c src/explore.c src/spinlock.h src/log.h src/explore.h src/vnode.h src/flags.h src/open_file.c src/open_file.h src/util/string.h src/util/string.c src/main.c src/user/posix_explore.h src/user/posix_explore.c Makefile
 	mkdir -p bin
-	${CC} -fanalyzer -fsanitize=undefined,address,leak -g -Og -o $@ src/vnode.c src/explore.c src/open_file.c src/util/string.c src/main.c
+	${CC} -fanalyzer -fsanitize=undefined,address,leak -g -Og -o $@ src/vnode.c src/explore.c src/open_file.c src/util/string.c src/user/posix_explore.c src/main.c
