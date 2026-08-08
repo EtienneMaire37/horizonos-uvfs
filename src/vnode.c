@@ -4,7 +4,7 @@
 #include "spinlock.h"
 #include "log.h"
 #include "util/string.h"
-#include "user/posix_explore.h"
+#include "user/posix_interface.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,10 +43,9 @@ void vfs_create_root_node()
 vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
 {
     assert(name && st);
-    vnode_t* newn = malloc(sizeof(vnode_t));
+    vnode_t* newn = calloc(1, sizeof(vnode_t));
     if (!newn) return NULL;
     vfs_total_nodes++;
-    memset(newn, 0, sizeof(*newn));
     newn->children = newn->next = newn->prev = NULL;
     newn->name = strdup(name);
     newn->st = *st;
@@ -54,6 +53,8 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     newn->flags = VNODE_INIT;
     newn->ref = VNODE_REF_INIT;
     newn->explore = posix_explore;
+    newn->read = posix_read;
+    newn->write = posix_write;
     return newn;
 }
 
