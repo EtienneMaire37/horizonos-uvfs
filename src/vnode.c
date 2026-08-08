@@ -18,9 +18,9 @@ _Atomic size_t vfs_total_nodes = 0;
 void vfs_create_root_node()
 {
     struct stat st;
-    st.st_atim = (struct timespec){0, 0};
-    st.st_ctim = (struct timespec){0, 0};
-    st.st_mtim = (struct timespec){0, 0};
+    st.st_atim = (struct timespec){ 0, 0 };
+    st.st_ctim = (struct timespec){ 0, 0 };
+    st.st_mtim = (struct timespec){ 0, 0 };
     st.st_blksize = 4096;
     st.st_blocks = 0;
     st.st_dev = 0;
@@ -46,15 +46,13 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     vnode_t* newn = malloc(sizeof(vnode_t));
     if (!newn) return NULL;
     vfs_total_nodes++;
+    memset(newn, 0, sizeof(*newn));
     newn->children = newn->next = newn->prev = NULL;
     newn->name = strdup(name);
     newn->st = *st;
     newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
     newn->flags = VNODE_INIT;
-    newn->parent = NULL;
     newn->ref = VNODE_REF_INIT;
-    newn->fs_specific = NULL;
-    newn->mountpoint.ptr = NULL;
     newn->explore = posix_explore;
     return newn;
 }
@@ -332,4 +330,20 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     vnode_delete_ref(&current);
     *_errno = ENOENT;
     return (vnode_ref_t){ NULL };
+}
+
+ssize_t read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
+{
+    vnode_t* node = ref.ptr;
+    assert(node);
+    assert(ref.ptr->read);
+    return ref.ptr->read(ref, buf, bytes, offset);
+}
+
+ssize_t write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
+{
+    vnode_t* node = ref.ptr;
+    assert(node);
+    assert(ref.ptr->write);
+    return ref.ptr->write(ref, buf, bytes, offset);
 }
