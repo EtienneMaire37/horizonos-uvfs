@@ -1,5 +1,8 @@
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdlib.h>
+
+#include "log.h"
 
 static inline __attribute__((always_inline)) bool try_acquire_spinlock(atomic_flag* spinlock)
 {
@@ -9,7 +12,11 @@ static inline __attribute__((always_inline)) bool try_acquire_spinlock(atomic_fl
 static inline __attribute__((always_inline)) void acquire_spinlock(atomic_flag* spinlock)
 {
 	while (try_acquire_spinlock(spinlock))
+	{
+		LOG(ERROR, "DEADLOCK");
+		abort();
         __builtin_ia32_pause();
+	}
 }
 
 static inline __attribute__((always_inline)) void release_spinlock(atomic_flag* spinlock)

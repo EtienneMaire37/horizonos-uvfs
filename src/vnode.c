@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 vnode_ref_t vfs_root_node = (vnode_ref_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
@@ -35,19 +36,22 @@ void vfs_create_root_node()
     st.st_nlink = 1;
     st.st_size = 0;
 
-    vnode_t* node = vfs_create_new_vnode("/", &st);
-    ref_inc(&node->ref);
-    vfs_root_node = (vnode_ref_t){ node };
+    vfs_root_node = vfs_create_new_vnode("/", &st);
 }
 
-vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
+vnode_ref_t vfs_create_new_vnode(const char* name, const struct stat* st)
 {
     assert(name && st);
     vnode_t* newn = calloc(1, sizeof(vnode_t));
-    if (!newn) return NULL;
-    vfs_total_nodes++;
-    newn->children = newn->next = newn->prev = NULL;
+    if (!newn) return (vnode_ref_t){ NULL };
     newn->name = strdup(name);
+    if (!newn->name)
+    {
+        free(newn);
+        return (vnode_ref_t){ NULL };
+    }
+    vfs_total_nodes++;
+    newn->children.ptr = newn->next = newn->prev = NULL;
     newn->st = *st;
     newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
     newn->flags = VNODE_INIT;
@@ -55,7 +59,7 @@ vnode_t* vfs_create_new_vnode(const char* name, const struct stat* st)
     newn->explore = posix_explore;
     newn->read = posix_read;
     newn->write = posix_write;
-    return newn;
+    return (vnode_ref_t){ newn };
 }
 
 void vnode_delete_ref(vnode_ref_t* ref)
@@ -88,70 +92,40 @@ void vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct sta
 {
     assert(node.ptr);
 
-    vnode_t* child = vfs_create_new_vnode(name, st);
+    vnode_ref_t child = vfs_create_new_vnode(name, st);
 
+    vnode_ref_t ref = vnode_dereference(node, children);
     uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
 
-    child->parent = node.ptr;
-    // parent -> child
-    ref_inc(&child->ref);
-    child->next = node.ptr->children;
-    // do NOT count next/prev references to avoid race conditions
-    if (node.ptr->children)
-        node.ptr->children->prev = child;
-    node.ptr->children = child;
+    child.ptr->next = ref.ptr;
+    child.ptr->parent = node.ptr;
+
+    if (ref.ptr)
+    {
+        uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
+        child.ptr->next->prev = child.ptr;
+        node.ptr->children = child;
+        release_spinlock_noint(&ref.ptr->lock, flags);
+    }
+    else
+        node.ptr->children = child;
 
     release_spinlock_noint(&node.ptr->lock, flags);
+
+    vnode_delete_ref(&ref);
 }
 
 void vfs_unload_children(vnode_ref_t node)
 {
     assert(node.ptr);
-    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
-    vnode_t* child = node.ptr->children;
-    node.ptr->children = NULL;
-    release_spinlock_noint(&node.ptr->lock, flags);
-    if (child)
-        ref_dec(&child->ref);
+
+    // Just leak eveything for now
+    node.ptr->children.ptr = NULL;
 }
 
-void vnode_free(const struct ref* _ref)
+void ___vnode_free(const struct ref* _ref)
 {
-    vnode_t* node = container_of(_ref, vnode_t, ref);
-    if (node == vfs_root_node.ptr) return;
-    uint32_t flags = acquire_spinlock_noint(&node->lock);
-    if (!node->parent)
-    {
-        release_spinlock_noint(&node->lock, flags);
-        return;
-    }
-    node->parent = NULL;
-    release_spinlock_noint(&node->lock, flags);
-    vnode_ref_t ref = { node };
-    if (!node || !_ref)
-        return;
-    // LOG(TRACE, "Destroying inode %zu", (size_t)node->st.st_ino);
-    vnode_ref_t child = vnode_dereference(ref, children);
-    vnode_ref_t prev = vnode_dereference(ref, prev);
-    vnode_ref_t next = vnode_dereference(ref, next);
-    if (child.ptr)
-        ref_dec(&child.ptr->ref);
-    if (prev.ptr)
-    {
-        prev.ptr->next = NULL;
-        ref_dec(&prev.ptr->ref);
-    }
-    if (next.ptr)
-    {
-        next.ptr->prev = NULL;
-        ref_dec(&next.ptr->ref);
-    }
-    vnode_delete_ref(&child);
-    vnode_delete_ref(&prev);
-    vnode_delete_ref(&next);
-    vfs_total_nodes--;
-    free(node->name);
-    free(node);
+    ;
 }
 
 void vfs_log_structure_helper(vnode_ref_t node, int depth)
@@ -176,6 +150,7 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_ref_t ref, char* buf, size_t b
 {
     vnode_t* node = ref.ptr;
     assert(node);
+    LOG(TRACE, "vfs_get_absolute_path_to_node_helper: %s", node->name);
     size_t offset = 0;
     vnode_ref_t parent_ref = vnode_dereference(ref, parent);
     if (parent_ref.ptr)
@@ -184,7 +159,7 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_ref_t ref, char* buf, size_t b
         vnode_delete_ref(&parent_ref);
         if (offset < bufsiz)
         {
-            int maxwrite = bufsiz - offset;
+            int maxwrite = bufsiz - offset - 1; // -1 to take the / into account
             int len = strlen(node->name);
             offset += snprintf(&buf[offset], bufsiz, "/%*s", len > maxwrite ? maxwrite : len, node->name);
         }
@@ -196,6 +171,7 @@ size_t vfs_get_absolute_path_to_node(vnode_ref_t ref, char* buf, size_t bufsiz)
 {
     vnode_t* node = ref.ptr;
     assert(bufsiz > 2);
+    assert(buf);
     assert(node);
     size_t ret;
     if (node->parent)
@@ -235,7 +211,13 @@ bool vfs_verify_tree_integrity()
     return ret;
 }
 
-// TODO: Add symbolic link support
+vnode_ref_t vfs_copy_reference(vnode_ref_t ref)
+{
+    if (!ref.ptr) return ref;
+    ref_inc(&ref.ptr->ref);
+    return ref;
+}
+
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd, bool follow_symlinks)
 {
     assert(!follow_symlinks);
@@ -243,10 +225,12 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     assert(path);
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
+    if (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode))
+        vnode_move_reference(&cwd, parent);
     bool absolute_path = *path == '/';
     while (*path == '/') path++;
     if (!*path)
-        return absolute_path ? vfs_root_node : cwd;
+        return absolute_path ? vfs_copy_reference(vfs_root_node) : vfs_copy_reference(cwd);
     vnode_ref_t current = (cwd.ptr && !absolute_path) ? cwd : vfs_root_node;
     if ((*_errno = vfs_explore(current)))
         return (vnode_ref_t){ NULL };
@@ -302,22 +286,32 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             vnode_delete_ref(&current);
             if (*path && !S_ISDIR(child.ptr->st.st_mode))
             {
-                *_errno = ENOTDIR;
-                return (vnode_ref_t){ NULL };
+                if (!S_ISLNK(child.ptr->st.st_mode))
+                {
+                    *_errno = ENOTDIR;
+                    return (vnode_ref_t){ NULL };
+                }
+                vnode_ref_t _child = child;
+                char _path[PATH_MAX];
+                ssize_t ret;
+                if ((ret = vfs_read(child, _path, sizeof(_path), 0)) < 0)
+                {
+                    *_errno = -ret;
+                    return (vnode_ref_t){ NULL };
+                }
+                child = vfs_get_vnode_from_path(_errno, uid, gid, _path, _child, follow_symlinks);
+                vnode_delete_ref(&_child);
             }
-            bool r = (uid == child.ptr->st.st_uid) ? (child.ptr->st.st_mode & S_IRUSR) :
-                    ((gid == child.ptr->st.st_gid) ? (child.ptr->st.st_mode & S_IRGRP) :
-                                                     (child.ptr->st.st_mode & S_IROTH)),
-                 x = (uid == child.ptr->st.st_uid) ? (child.ptr->st.st_mode & S_IXUSR) :
+            bool x = (uid == child.ptr->st.st_uid) ? (child.ptr->st.st_mode & S_IXUSR) :
                     ((gid == child.ptr->st.st_gid) ? (child.ptr->st.st_mode & S_IXGRP) :
                                                      (child.ptr->st.st_mode & S_IXOTH));
-            if (uid != 0 && (!x || !r))
+            if (!*path)
+                return child;
+            if (uid != 0 && !x)
             {
                 *_errno = EACCES;
                 return (vnode_ref_t){ NULL };
             }
-            if (!*path)
-                return child;
             current = child;
             if ((*_errno = vfs_explore(current)))
                 return (vnode_ref_t){ NULL };
@@ -333,7 +327,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     return (vnode_ref_t){ NULL };
 }
 
-ssize_t read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
+ssize_t vfs_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     assert(node);
@@ -341,7 +335,7 @@ ssize_t read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
     return ref.ptr->read(ref, buf, bytes, offset);
 }
 
-ssize_t write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
+ssize_t vfs_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     assert(node);
