@@ -1,6 +1,7 @@
 #include "vnode.h"
 #include "explore.h"
 #include "flags.h"
+#include "ref.h"
 #include "spinlock.h"
 #include "log.h"
 #include "util/string.h"
@@ -65,6 +66,7 @@ vnode_ref_t vfs_create_new_vnode(const char* name, const struct stat* st)
 void vnode_delete_ref(vnode_ref_t* ref)
 {
     if (!ref || !ref->ptr) return;
+    LOG(TRACE, "Deleting reference to node \"%s\"", ref->ptr->name);
     ref_dec(&ref->ptr->ref);
     *ref = (vnode_ref_t){ NULL };
 }
@@ -119,13 +121,50 @@ void vfs_unload_children(vnode_ref_t node)
 {
     assert(node.ptr);
 
-    // Just leak eveything for now
     node.ptr->children.ptr = NULL;
+    vnode_ref_t child = vnode_dereference(node, children);
+    while (child.ptr)
+    {
+        uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
+        if (child.ptr->next)
+        {
+            uint32_t flags = acquire_spinlock_noint(&child.ptr->next->lock);
+            child.ptr->next->prev = NULL;
+            release_spinlock_noint(&child.ptr->next->lock, flags);
+        }
+        release_spinlock_noint(&child.ptr->lock, flags);
+        ref_dec(&child.ptr->ref);
+        vnode_move_reference(&child, next);
+    }
+}
+
+void vfs_unparent_children(vnode_ref_t node)
+{
+    assert(node.ptr);
+
+    vnode_ref_t child = vnode_dereference(node, children);
+    while (child.ptr)
+    {
+        child.ptr->parent = NULL;
+        vnode_move_reference(&child, next);
+    }
 }
 
 void ___vnode_free(const struct ref* _ref)
 {
-    ;
+    vnode_t* node = container_of(_ref, vnode_t, ref);
+    LOG(DEBUG, "Freeing vnode \"%s\"", node->name);
+    if (node == vfs_root_node.ptr)
+    {
+        LOG(FATAL, "vnode_free: Tried to free root node");
+        abort();
+    }
+    vnode_ref_t ref = { node };
+    vfs_unparent_children(ref);
+    vfs_unload_children(ref);
+    free(node->name);
+    free(node);
+    vfs_total_nodes--;
 }
 
 void vfs_log_structure_helper(vnode_ref_t node, int depth)
@@ -225,15 +264,32 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     assert(path);
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
-    if (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode))
-        vnode_move_reference(&cwd, parent);
+    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vfs_copy_reference(cwd);
     bool absolute_path = *path == '/';
     while (*path == '/') path++;
     if (!*path)
-        return absolute_path ? vfs_copy_reference(vfs_root_node) : vfs_copy_reference(cwd);
-    vnode_ref_t current = (cwd.ptr && !absolute_path) ? cwd : vfs_root_node;
+    {
+        vnode_delete_ref(&ecwd);
+        return absolute_path ? vfs_copy_reference(vfs_root_node) : vfs_copy_reference(ecwd);
+    }
+    vnode_ref_t current = (ecwd.ptr && !absolute_path) ? vfs_copy_reference(ecwd) : vfs_copy_reference(vfs_root_node);
     if ((*_errno = vfs_explore(current)))
+    {
+        vnode_delete_ref(&ecwd);
+        vnode_delete_ref(&current);
         return (vnode_ref_t){ NULL };
+    }
+    bool x = (uid == current.ptr->st.st_uid) ? (current.ptr->st.st_mode & S_IXUSR) :
+            ((gid == current.ptr->st.st_gid) ? (current.ptr->st.st_mode & S_IXGRP) :
+                                             (current.ptr->st.st_mode & S_IXOTH));
+    if (uid != 0 && !x)
+    {
+        vnode_delete_ref(&ecwd);
+        vnode_delete_ref(&current);
+        *_errno = EACCES;
+        return (vnode_ref_t){ NULL };
+    }
+
     vnode_ref_t child = vnode_dereference(current, children);
     size_t len = strlen_slash(path);
     int fake_entries = 2;
@@ -249,7 +305,11 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                     while (*path == '/')
                         path++;
                     if (!*path)
+                    {
+                        vnode_delete_ref(&ecwd);
+                        vnode_delete_ref(&current);
                         return current;
+                    }
                     len = strlen_slash(path);
                     fake_entries = 2;
                     continue;
@@ -265,11 +325,24 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                     if (current.ptr != vfs_root_node.ptr)
                     {
                         vnode_move_reference(&current, parent);
+                        bool x = (uid == current.ptr->st.st_uid) ? (current.ptr->st.st_mode & S_IXUSR) :
+                                ((gid == current.ptr->st.st_gid) ? (current.ptr->st.st_mode & S_IXGRP) :
+                                                                 (current.ptr->st.st_mode & S_IXOTH));
+                        if (uid != 0 && !x)
+                        {
+                            vnode_delete_ref(&ecwd);
+                            vnode_delete_ref(&current);
+                            *_errno = EACCES;
+                            return (vnode_ref_t){ NULL };
+                        }
                         vnode_delete_ref(&child);
                         child = vnode_dereference(current, children);
                     }
                     if (!*path)
+                    {
+                        vnode_delete_ref(&ecwd);
                         return current;
+                    }
                     len = strlen_slash(path);
                     fake_entries = 2;
                     continue;
@@ -288,6 +361,8 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             {
                 if (!S_ISLNK(child.ptr->st.st_mode))
                 {
+                    vnode_delete_ref(&ecwd);
+                    vnode_delete_ref(&current);
                     *_errno = ENOTDIR;
                     return (vnode_ref_t){ NULL };
                 }
@@ -296,6 +371,8 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 ssize_t ret;
                 if ((ret = vfs_read(child, _path, sizeof(_path), 0)) < 0)
                 {
+                    vnode_delete_ref(&ecwd);
+                    vnode_delete_ref(&current);
                     *_errno = -ret;
                     return (vnode_ref_t){ NULL };
                 }
@@ -306,15 +383,25 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                     ((gid == child.ptr->st.st_gid) ? (child.ptr->st.st_mode & S_IXGRP) :
                                                      (child.ptr->st.st_mode & S_IXOTH));
             if (!*path)
+            {
+                vnode_delete_ref(&ecwd);
+                vnode_delete_ref(&current);
                 return child;
+            }
             if (uid != 0 && !x)
             {
+                vnode_delete_ref(&ecwd);
+                vnode_delete_ref(&current);
                 *_errno = EACCES;
                 return (vnode_ref_t){ NULL };
             }
             current = child;
             if ((*_errno = vfs_explore(current)))
+            {
+                vnode_delete_ref(&ecwd);
+                vnode_delete_ref(&current);
                 return (vnode_ref_t){ NULL };
+            }
             child = vnode_dereference(current, children);
             len = strlen_slash(path);
             fake_entries = 2;
@@ -323,6 +410,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
         vnode_move_reference(&child, next);
     }
     vnode_delete_ref(&current);
+    vnode_delete_ref(&ecwd);
     *_errno = ENOENT;
     return (vnode_ref_t){ NULL };
 }

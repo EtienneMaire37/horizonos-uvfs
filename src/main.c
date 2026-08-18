@@ -9,6 +9,7 @@
 
 int main()
 {
+    assert(sizeof(vnode_ref_t) == sizeof(uintptr_t));
     vfs_create_root_node();
     while (true)
     {
@@ -66,7 +67,6 @@ int main()
                 printf("Invalid action\n");
             vnode_delete_ref(&node);
             vfs_verify_tree_integrity();
-            
         }
     }
 }
