@@ -121,8 +121,8 @@ void vfs_unload_children(vnode_ref_t node)
 {
     assert(node.ptr);
 
-    node.ptr->children.ptr = NULL;
     vnode_ref_t child = vnode_dereference(node, children);
+    node.ptr->children.ptr = NULL;
     while (child.ptr)
     {
         uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
@@ -171,7 +171,7 @@ void vfs_log_structure_helper(vnode_ref_t node, int depth)
 {
     assert(node.ptr);
 
-    LOG(DEBUG, "%*s- \"%s\" (inode %ld)%s", depth, "", node.ptr->name, (long)node.ptr->st.st_ino, ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(node.ptr->st.st_mode))) ? "" : " <NOT EXPLORED>");
+    LOG(DEBUG, "%*s- \"%s\" (inode %ld) [refcount %d]%s", depth, "", node.ptr->name, (long)node.ptr->st.st_ino, node.ptr->ref.count - 1, ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(node.ptr->st.st_mode))) ? "" : " <NOT EXPLORED>");
     vnode_ref_t child = vnode_dereference(node, children);
     while (child.ptr)
     {
