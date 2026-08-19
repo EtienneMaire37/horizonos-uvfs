@@ -31,7 +31,7 @@ int main()
             i++;
         }
         int _errno;
-        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ NULL }, false);
+        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ NULL }, true);
         errno = _errno;
         if (!node.ptr)
             perror("Couldn't read vnode");
@@ -57,7 +57,7 @@ int main()
             else if (strcmp(action, "tree") == 0)
             {
                 printf("Tree:\n");
-                vfs_log_structure(node);               
+                vfs_log_structure(node);
             }
             else if (strcmp(action, "unload") == 0)
             {

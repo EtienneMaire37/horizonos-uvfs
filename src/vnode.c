@@ -259,7 +259,6 @@ vnode_ref_t vfs_copy_reference(vnode_ref_t ref)
 
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd, bool follow_symlinks)
 {
-    assert(!follow_symlinks);
     assert(_errno);
     assert(path);
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
@@ -357,9 +356,9 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             while (*path == '/')
                 path++;
             vnode_delete_ref(&current);
-            if (*path && !S_ISDIR(child.ptr->st.st_mode))
+            if ((*path && !S_ISDIR(child.ptr->st.st_mode)) || (!*path && S_ISLNK(child.ptr->st.st_mode)))
             {
-                if (!S_ISLNK(child.ptr->st.st_mode))
+                if (*path && !S_ISLNK(child.ptr->st.st_mode))
                 {
                     vnode_delete_ref(&ecwd);
                     vnode_delete_ref(&current);
