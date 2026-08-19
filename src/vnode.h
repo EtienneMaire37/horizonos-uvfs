@@ -17,14 +17,14 @@ struct vnode
     char* _Atomic name;
     struct stat st;
 
-    vnode_ref_t children; // Owns a reference to each child
+    vnode_ref_struct_t children; // Owns a reference to each child
     vnode_t *_Atomic next, *_Atomic prev, *_Atomic parent; // Non owning references to other nodes
     
     atomic_flag lock;
     vnode_flags_t flags;
     struct ref ref;
     void* fs_specific;
-    mountpoint_ref_t mountpoint;
+    mountpoint_ref_struct_t mountpoint;
 
     int (*_Atomic explore)(vnode_ref_t); 
     ssize_t (*_Atomic read)(vnode_ref_t, void*, size_t, off_t); 
@@ -36,7 +36,7 @@ struct vnode
 
 #define VNODE_REF_INIT ((struct ref){___vnode_free, 1})
 
-extern vnode_ref_t vfs_root_node;
+extern vnode_ref_struct_t vfs_root_node;
 extern _Atomic  size_t vfs_total_nodes;
 
 void vfs_create_root_node();

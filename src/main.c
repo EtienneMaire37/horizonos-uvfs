@@ -31,10 +31,10 @@ int main()
 {
     assert(sizeof(vnode_ref_t) == sizeof(uintptr_t));
     vfs_create_root_node();
-    errno = vfs_mount(vfs_root_node, (vnode_ref_t){ NULL }, "virt");
+    errno = vfs_mount(vnode_ref_dereference(vfs_root_node), (vnode_ref_t){ NULL }, "virt");
     if (errno)
         perror("Couldn't mount root");
-    errno = vfs_mkdir("dev", vfs_root_node, 0755, 0, 0);
+    errno = vfs_mkdir("dev", vnode_ref_dereference(vfs_root_node), 0755, 0, 0);
     if (errno)
         perror("Couldn't create /dev");
     while (true)
@@ -59,7 +59,7 @@ int main()
         }
 
         int _errno;
-        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
+        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, vnode_ref_dereference(vfs_root_node), (vnode_ref_t){ NULL }, true);
         if (strcmp(action, "stat") == 0)
         {
             if (!node.ptr)
@@ -109,7 +109,7 @@ int main()
                 perror("Couldn't read input");
                 abort();
             }
-            vnode_ref_t mount_device = vfs_get_vnode_from_path(&_errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
+            vnode_ref_t mount_device = vfs_get_vnode_from_path(&_errno, 0, 0, path, vnode_ref_dereference(vfs_root_node), (vnode_ref_t){ NULL }, true);
             errno = vfs_mount(node, mount_device, action);
             vnode_delete_ref(&mount_device);
             if (errno)

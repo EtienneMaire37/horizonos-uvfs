@@ -9,6 +9,7 @@
 #include "mountpoint.h"
 #include "fs/virtual.h"
 #include "rdev.h"
+#include "vnode_ref.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,7 @@
 #include <sys/stat.h>
 #include <limits.h>
 
-vnode_ref_t vfs_root_node = (vnode_ref_t){ NULL };
+vnode_ref_struct_t vfs_root_node = (vnode_ref_struct_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
 
 void vfs_create_root_node()
@@ -34,13 +35,13 @@ void vfs_create_root_node()
     st.st_gid = 0;
     st.st_uid = 0;
 
-    st.st_ino = 1;
+    st.st_ino = virtfs_generate_ino();
     st.st_mode = 0755 | S_IFDIR;
 
     st.st_nlink = 1;
     st.st_size = 0;
 
-    vfs_root_node = vfs_create_new_vnode("/", &st);
+    vfs_root_node = vnode_struct_dereference(vfs_create_new_vnode("/", &st));
 }
 
 vnode_ref_t vfs_create_new_vnode(const char* name, const struct stat* st)
@@ -108,8 +109,7 @@ void vfs_add_new_child_node(vnode_ref_t node, const char* name, struct stat st)
         return;
     }
 
-    child.ptr->mountpoint = mountpoint_copy_ref(node.ptr->mountpoint);
-    
+    child.ptr->mountpoint = mountpoint_struct_dereference(mountpoint_copy_ref(mountpoint_ref_dereference(node.ptr->mountpoint)));
 
     uint32_t node_flags = node.ptr->flags;
     if (!(node_flags & VNODE_EXPLORED) && !(node_flags & VNODE_EXPLORING))
@@ -256,7 +256,7 @@ size_t vfs_count_nodes(vnode_ref_t ref)
 
 bool vfs_verify_tree_integrity()
 {
-    size_t nodes = vfs_count_nodes(vfs_root_node) + 1;
+    size_t nodes = vfs_count_nodes(vnode_ref_dereference(vfs_root_node)) + 1;
     bool ret = nodes == vfs_total_nodes;
     #ifndef NDEBUG
     if (!ret)
@@ -280,7 +280,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
 {
     assert(_errno);
     assert(path);
-    if (!root.ptr) root = vfs_root_node;
+    if (!root.ptr) root = vnode_ref_dereference(vfs_root_node);
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
     vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vnode_copy_ref(cwd);
