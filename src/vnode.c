@@ -66,8 +66,10 @@ void vnode_delete_ref(vnode_ref_t* ref)
 {
     if (!ref || !ref->ptr) return;
     LOG(TRACE, "Deleting reference to node \"%s\"", ref->ptr->name);
-    ref_dec(&ref->ptr->ref);
-    *ref = (vnode_ref_t){ NULL };
+    struct ref* ref_ref = ref->ptr ? &ref->ptr->ref : NULL;
+    ref->ptr = NULL;
+    if (ref_ref)
+        ref_dec(ref_ref);
 }
 
 vnode_ref_t ___vnode_dereference(vnode_ref_t node, size_t field_offset)
@@ -89,19 +91,25 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
     *ref = new_ref;
 }
 
-void vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st)
+void vfs_add_new_child_node(vnode_ref_t node, const char* name, struct stat st)
 {
     assert(node.ptr);
 
     if (!S_ISDIR(node.ptr->st.st_mode)) return;
 
-    vnode_ref_t child = vfs_create_new_vnode(name, st);
+    st.st_blksize = node.ptr->mountpoint.ptr->blksize;
+    st.st_dev = node.ptr->mountpoint.ptr->dev;
+
+    vnode_ref_t child = vfs_create_new_vnode(name, &st);
 
     if (!child.ptr)
     {
         LOG(WARN, "vfs_add_new_child_node: Couldn't allocate child");
         return;
     }
+
+    child.ptr->mountpoint = mountpoint_copy_ref(node.ptr->mountpoint);
+    
 
     uint32_t node_flags = node.ptr->flags;
     if (!(node_flags & VNODE_EXPLORED) && !(node_flags & VNODE_EXPLORING))
@@ -261,7 +269,7 @@ bool vfs_verify_tree_integrity()
     return ret;
 }
 
-vnode_ref_t vfs_copy_reference(vnode_ref_t ref)
+vnode_ref_t vnode_copy_ref(vnode_ref_t ref)
 {
     if (!ref.ptr) return ref;
     ref_inc(&ref.ptr->ref);
@@ -275,15 +283,15 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     if (!root.ptr) root = vfs_root_node;
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
-    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vfs_copy_reference(cwd);
+    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vnode_copy_ref(cwd);
     bool absolute_path = *path == '/';
     while (*path == '/') path++;
     if (!*path)
     {
         vnode_delete_ref(&ecwd);
-        return absolute_path ? vfs_copy_reference(root) : vfs_copy_reference(ecwd);
+        return absolute_path ? vnode_copy_ref(root) : vnode_copy_ref(ecwd);
     }
-    vnode_ref_t current = (ecwd.ptr && !absolute_path) ? vfs_copy_reference(ecwd) : vfs_copy_reference(root);
+    vnode_ref_t current = (ecwd.ptr && !absolute_path) ? vnode_copy_ref(ecwd) : vnode_copy_ref(root);
     if ((*_errno = vfs_explore(current)))
     {
         vnode_delete_ref(&ecwd);
@@ -456,7 +464,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         return ENOMEM;
     mountpoint->ref = MOUNTPOINT_REF_INIT;
     mountpoint->dev = dev.ptr ? dev.ptr->st.st_rdev : vfs_generate_rdev();
-    mountpoint->root = vfs_copy_reference(ref);
+    mountpoint->root = vnode_copy_ref(ref);
     switch (fstype_en)
     {
     case FSTYPE_VIRTUAL:
@@ -482,8 +490,6 @@ int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gi
     st.st_mode = access | S_IFDIR;
     st.st_ino = mountpoint->generate_ino();
     st.st_blocks = 0;
-    st.st_blksize = 4096;
-    st.st_dev = mountpoint->dev;
     st.st_rdev = 0;
     st.st_uid = uid;
     st.st_gid = gid;
@@ -492,6 +498,6 @@ int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gi
     st.st_atim = (struct timespec){ 0, 0 };
     st.st_ctim = (struct timespec){ 0, 0 };
     st.st_mtim = (struct timespec){ 0, 0 };
-    vfs_add_new_child_node(parent, name, &st);
+    vfs_add_new_child_node(parent, name, st);
     return 0;
 }

@@ -8,8 +8,17 @@
 void mountpoint_delete_ref(mountpoint_ref_t* ref)
 {
     assert(ref);
-    if (ref->ptr)
-        ref_dec(&ref->ptr->ref);
+    struct ref* ref_ref = ref->ptr ? &ref->ptr->ref : NULL;
+    ref->ptr = NULL;
+    if (ref_ref)
+        ref_dec(ref_ref);
+}
+
+mountpoint_ref_t mountpoint_copy_ref(mountpoint_ref_t ref)
+{
+    if (ref.ptr)
+        ref_inc(&ref.ptr->ref);
+    return ref;
 }
 
 void ___mountpoint_free(const struct ref* ref)

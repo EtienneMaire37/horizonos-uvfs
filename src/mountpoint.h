@@ -3,7 +3,7 @@
 #include "mountpoint_ref.h"
 #include "vnode_ref.h"
 #include "ref.h"
-#include <sys/stat.h>
+#include <sys/types.h>
 
 struct mountpoint
 {
@@ -11,6 +11,7 @@ struct mountpoint
     
     vnode_ref_t root;
     dev_t dev;
+    blksize_t blksize;
 
     ino_t (*generate_ino)();
 };
@@ -24,5 +25,6 @@ typedef enum
     FSTYPE_UNKNOWN
 } fstype_t;
 
+mountpoint_ref_t mountpoint_copy_ref(mountpoint_ref_t ref);
 void mountpoint_delete_ref(mountpoint_ref_t* ref);
 void ___mountpoint_free(const struct ref* ref);
