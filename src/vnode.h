@@ -53,8 +53,10 @@ void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
 vnode_ref_t vfs_copy_reference(vnode_ref_t ref);
-vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t cwd, bool follow_symlinks);
+vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t root, vnode_ref_t cwd, bool follow_symlinks);
 
 ssize_t vfs_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
 ssize_t vfs_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
 
+int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype);
+int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gid_t gid);

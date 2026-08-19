@@ -2,6 +2,8 @@
 
 // From https://nullprogram.com/blog/2015/02/17/
 
+#include <stddef.h>
+
 struct ref {
     void (*free)(const struct ref *);
     int count;
