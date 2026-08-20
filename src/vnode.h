@@ -11,19 +11,21 @@
 #include "flags.h"
 #include "vnode_ref.h"
 #include "mountpoint_ref.h"
+#include "inode_ref.h"
 
 struct vnode
 {
+    struct ref ref;
+
     char* _Atomic name;
-    struct stat st;
+
+    inode_ref_struct_t inode;
 
     vnode_ref_struct_t children; // Owns a reference to each child
     vnode_t *_Atomic next, *_Atomic prev, *_Atomic parent; // Non owning references to other nodes
     
     atomic_flag lock;
     vnode_flags_t flags;
-    struct ref ref;
-    void* fs_specific;
     mountpoint_ref_struct_t mountpoint;
 
     int (*_Atomic explore)(vnode_ref_t); 
@@ -46,7 +48,7 @@ void vnode_delete_ref(vnode_ref_t* ref);
 void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset);
 
 void ___vnode_free(const struct ref* ref);
-vnode_ref_t vfs_create_new_vnode(const char* name, const struct stat* st);
+vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode);
 void vfs_add_new_child_node(vnode_ref_t node, const char* name, struct stat st);
 void vfs_unload_children(vnode_ref_t node);
 void vfs_log_structure(vnode_ref_t node);

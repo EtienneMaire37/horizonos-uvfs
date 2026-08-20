@@ -1,7 +1,9 @@
 #include "vnode.h"
 #include "explore.h"
 #include "flags.h"
+#include "inode_ref.h"
 #include "mountpoint_ref.h"
+#include "inode.h"
 #include "ref.h"
 #include "spinlock.h"
 #include "log.h"
@@ -41,12 +43,14 @@ void vfs_create_root_node()
     st.st_nlink = 1;
     st.st_size = 0;
 
-    vfs_root_node = vnode_struct_dereference(vfs_create_new_vnode("/", &st));
+    inode_ref_t inode = vfs_create_new_inode(&st);
+    vfs_root_node = vnode_struct_dereference(vfs_create_new_vnode("/", inode));
+    inode_delete_ref(&inode);
 }
 
-vnode_ref_t vfs_create_new_vnode(const char* name, const struct stat* st)
+vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
 {
-    assert(name && st);
+    assert(name && inode.ptr);
     vnode_t* newn = calloc(1, sizeof(vnode_t));
     if (!newn) return (vnode_ref_t){ NULL };
     newn->name = strdup(name);
@@ -56,7 +60,10 @@ vnode_ref_t vfs_create_new_vnode(const char* name, const struct stat* st)
         return (vnode_ref_t){ NULL };
     }
     vfs_total_nodes++;
-    newn->st = *st;
+    newn->inode = inode_struct_dereference(inode_copy_ref(inode));
+    uint32_t flags = acquire_spinlock_noint(&newn->inode.ptr->lock);
+    newn->inode.ptr->st.st_nlink++;
+    release_spinlock_noint(&newn->inode.ptr->lock, flags);
     newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
     newn->flags = VNODE_INIT;
     newn->ref = VNODE_REF_INIT;
@@ -96,12 +103,14 @@ void vfs_add_new_child_node(vnode_ref_t node, const char* name, struct stat st)
 {
     assert(node.ptr);
 
-    if (!S_ISDIR(node.ptr->st.st_mode)) return;
+    if (!S_ISDIR(node.ptr->inode.ptr->st.st_mode)) return;
 
     st.st_blksize = node.ptr->mountpoint.ptr->blksize;
     st.st_dev = node.ptr->mountpoint.ptr->dev;
 
-    vnode_ref_t child = vfs_create_new_vnode(name, &st);
+    inode_ref_t inode = vfs_create_new_inode(&st);
+    vnode_ref_t child = vfs_create_new_vnode(name, inode);
+    inode_delete_ref(&inode);
 
     if (!child.ptr)
     {
@@ -181,6 +190,12 @@ void ___vnode_free(const struct ref* _ref)
     vnode_ref_t ref = { node };
     vfs_unparent_children(ref);
     vfs_unload_children(ref);
+
+    inode_ref_t inode_ref = inode_ref_dereference(node->inode);
+    uint32_t flags = acquire_spinlock_noint(&inode_ref.ptr->lock);
+    inode_ref.ptr->st.st_nlink--;
+    release_spinlock_noint(&inode_ref.ptr->lock, flags);
+    inode_delete_ref(&inode_ref);
     free(node->name);
     free(node);
     vfs_total_nodes--;
@@ -190,7 +205,7 @@ void vfs_log_structure_helper(vnode_ref_t node, int depth)
 {
     assert(node.ptr);
 
-    LOG(DEBUG, "%*s- \"%s\" (inode %ld) [refcount %d]%s", depth, "", node.ptr->name, (long)node.ptr->st.st_ino, node.ptr->ref.count - 1, ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(node.ptr->st.st_mode))) ? "" : " <NOT EXPLORED>");
+    LOG(DEBUG, "%*s- \"%s\" (inode %ld) [refcount %d]%s", depth, "", node.ptr->name, (long)node.ptr->inode.ptr->st.st_ino, node.ptr->ref.count - 1, ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(node.ptr->inode.ptr->st.st_mode))) ? "" : " <NOT EXPLORED>");
     vnode_ref_t child = vnode_dereference(node, children);
     while (child.ptr)
     {
@@ -283,7 +298,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     if (!root.ptr) root = vnode_ref_dereference(vfs_root_node);
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
-    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vnode_copy_ref(cwd);
+    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->inode.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vnode_copy_ref(cwd);
     bool absolute_path = *path == '/';
     while (*path == '/') path++;
     if (!*path)
@@ -298,9 +313,9 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
         vnode_delete_ref(&current);
         return (vnode_ref_t){ NULL };
     }
-    bool x = (uid == current.ptr->st.st_uid) ? (current.ptr->st.st_mode & S_IXUSR) :
-            ((gid == current.ptr->st.st_gid) ? (current.ptr->st.st_mode & S_IXGRP) :
-                                             (current.ptr->st.st_mode & S_IXOTH));
+    bool x = (uid == current.ptr->inode.ptr->st.st_uid) ? (current.ptr->inode.ptr->st.st_mode & S_IXUSR) :
+            ((gid == current.ptr->inode.ptr->st.st_gid) ? (current.ptr->inode.ptr->st.st_mode & S_IXGRP) :
+                                             (current.ptr->inode.ptr->st.st_mode & S_IXOTH));
     if (uid != 0 && !x)
     {
         vnode_delete_ref(&ecwd);
@@ -344,9 +359,9 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                     if (current.ptr != root.ptr)
                     {
                         vnode_move_reference(&current, parent);
-                        bool x = (uid == current.ptr->st.st_uid) ? (current.ptr->st.st_mode & S_IXUSR) :
-                                ((gid == current.ptr->st.st_gid) ? (current.ptr->st.st_mode & S_IXGRP) :
-                                                                 (current.ptr->st.st_mode & S_IXOTH));
+                        bool x = (uid == current.ptr->inode.ptr->st.st_uid) ? (current.ptr->inode.ptr->st.st_mode & S_IXUSR) :
+                                ((gid == current.ptr->inode.ptr->st.st_gid) ? (current.ptr->inode.ptr->st.st_mode & S_IXGRP) :
+                                                                 (current.ptr->inode.ptr->st.st_mode & S_IXOTH));
                         if (uid != 0 && !x)
                         {
                             vnode_delete_ref(&ecwd);
@@ -376,9 +391,9 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             while (*path == '/')
                 path++;
             vnode_delete_ref(&current);
-            if ((*path && !S_ISDIR(child.ptr->st.st_mode)) || (!*path && S_ISLNK(child.ptr->st.st_mode)))
+            if ((*path && !S_ISDIR(child.ptr->inode.ptr->st.st_mode)) || (!*path && S_ISLNK(child.ptr->inode.ptr->st.st_mode)))
             {
-                if (*path && !S_ISLNK(child.ptr->st.st_mode))
+                if (*path && !S_ISLNK(child.ptr->inode.ptr->st.st_mode))
                 {
                     vnode_delete_ref(&ecwd);
                     vnode_delete_ref(&current);
@@ -398,9 +413,9 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 child = vfs_get_vnode_from_path(_errno, uid, gid, _path, root, _child, follow_symlinks);
                 vnode_delete_ref(&_child);
             }
-            bool x = (uid == child.ptr->st.st_uid) ? (child.ptr->st.st_mode & S_IXUSR) :
-                    ((gid == child.ptr->st.st_gid) ? (child.ptr->st.st_mode & S_IXGRP) :
-                                                     (child.ptr->st.st_mode & S_IXOTH));
+            bool x = (uid == child.ptr->inode.ptr->st.st_uid) ? (child.ptr->inode.ptr->st.st_mode & S_IXUSR) :
+                    ((gid == child.ptr->inode.ptr->st.st_gid) ? (child.ptr->inode.ptr->st.st_mode & S_IXGRP) :
+                                                     (child.ptr->inode.ptr->st.st_mode & S_IXOTH));
             if (!*path)
             {
                 vnode_delete_ref(&ecwd);
@@ -463,7 +478,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     if (!mountpoint)
         return ENOMEM;
     mountpoint->ref = MOUNTPOINT_REF_INIT;
-    mountpoint->dev = dev.ptr ? dev.ptr->st.st_rdev : vfs_generate_rdev();
+    mountpoint->dev = dev.ptr ? dev.ptr->inode.ptr->st.st_rdev : vfs_generate_rdev();
     mountpoint->root = vnode_copy_ref(ref);
     switch (fstype_en)
     {

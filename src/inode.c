@@ -1,0 +1,38 @@
+#include "inode.h"
+#include "ref.h"
+#include <stdlib.h>
+#include <assert.h>
+
+inode_ref_t vfs_create_new_inode(const struct stat* st)
+{
+    assert(st);
+    inode_t* newn = calloc(1, sizeof(inode_t));
+    if (!newn) return (inode_ref_t){ NULL };
+    newn->st = *st;
+    newn->st.st_nlink = 1;
+    newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
+    newn->ref = INODE_REF_INIT;
+    return (inode_ref_t){ newn };
+}
+
+void ___inode_free(const struct ref* _ref)
+{
+    inode_t* inode = container_of(_ref, inode_t, ref);
+    free(inode);
+}
+
+void inode_delete_ref(inode_ref_t* ref)
+{
+    if (!ref || !ref->ptr) return;
+    struct ref* ref_ref = ref->ptr ? &ref->ptr->ref : NULL;
+    ref->ptr = NULL;
+    if (ref_ref)
+        ref_dec(ref_ref);
+}
+
+inode_ref_t inode_copy_ref(inode_ref_t ref)
+{
+    if (!ref.ptr) return ref;
+    ref_inc(&ref.ptr->ref);
+    return ref;
+}

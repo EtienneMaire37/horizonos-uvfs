@@ -2,6 +2,7 @@
 #include "flags.h"
 #include "vnode.h"
 #include "spinlock.h"
+#include "inode.h"
 
 #include <assert.h>
 #include <linux/limits.h>
@@ -13,7 +14,7 @@ int vfs_explore(vnode_ref_t ref)
     vnode_t* node = ref.ptr;
     if (!node) return ENOENT;
     uint32_t flags = acquire_spinlock_noint(&node->lock);
-    if ((node->flags & VNODE_EXPLORED) || (node->flags & VNODE_EXPLORING) || !S_ISDIR(node->st.st_mode))
+    if ((node->flags & VNODE_EXPLORED) || (node->flags & VNODE_EXPLORING) || !S_ISDIR(node->inode.ptr->st.st_mode))
     {
         release_spinlock_noint(&node->lock, flags);
         return 0;

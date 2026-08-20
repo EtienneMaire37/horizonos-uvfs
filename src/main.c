@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include "vnode.h"
+#include "inode.h"
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -68,9 +69,9 @@ int main()
                 perror("Couldn't read vnode");
                 continue;                    
             }
-            printf("Inode: %lu\n", (unsigned long)node.ptr->st.st_ino);
-            printf("Mode: %#o\n", (unsigned int)node.ptr->st.st_mode);
-            printf("Uid: %u\tGid: %u\n", (unsigned int)node.ptr->st.st_uid, (unsigned int)node.ptr->st.st_gid);
+            printf("Inode: %lu\n", (unsigned long)node.ptr->inode.ptr->st.st_ino);
+            printf("Mode: %#o\n", (unsigned int)node.ptr->inode.ptr->st.st_mode);
+            printf("Uid: %u\tGid: %u\n", (unsigned int)node.ptr->inode.ptr->st.st_uid, (unsigned int)node.ptr->inode.ptr->st.st_gid);
         }
         else if (strcmp(action, "tree") == 0)
         {
