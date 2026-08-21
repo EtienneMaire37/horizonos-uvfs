@@ -14,6 +14,10 @@ struct mountpoint
     blksize_t blksize;
 
     ino_t (*generate_ino)();
+
+    int (*explore)(vnode_ref_t); 
+    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 
+    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t); 
 };
 
 #define MOUNTPOINT_REF_INIT ((struct ref){ .count = 1, .free = ___mountpoint_free })

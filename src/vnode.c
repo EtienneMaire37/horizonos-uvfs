@@ -20,7 +20,7 @@
 #include <sys/stat.h>
 #include <limits.h>
 
-vnode_ref_struct_t vfs_root_node = (vnode_ref_struct_t){ NULL };
+vnode_ref_t vfs_root_node = (vnode_ref_t){ NULL };
 _Atomic size_t vfs_total_nodes = 0;
 
 void vfs_create_root_node()
@@ -44,7 +44,7 @@ void vfs_create_root_node()
     st.st_size = 0;
 
     inode_ref_t inode = vfs_create_new_inode(&st);
-    vfs_root_node = vnode_struct_dereference(vfs_create_new_vnode("/", inode));
+    vfs_root_node = vfs_create_new_vnode("/", inode);
     inode_delete_ref(&inode);
 }
 
@@ -60,7 +60,7 @@ vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
         return (vnode_ref_t){ NULL };
     }
     vfs_total_nodes++;
-    newn->inode = inode_struct_dereference(inode_copy_ref(inode));
+    newn->inode = inode_copy_ref(inode);
     uint32_t flags = acquire_spinlock_noint(&newn->inode.ptr->lock);
     newn->inode.ptr->st.st_nlink++;
     release_spinlock_noint(&newn->inode.ptr->lock, flags);
@@ -80,7 +80,7 @@ void vnode_delete_ref(vnode_ref_t* ref)
         ref_dec(ref_ref);
 }
 
-vnode_ref_t ___vnode_dereference(vnode_ref_t node, size_t field_offset)
+vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset)
 {
     assert(node.ptr);
     uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
@@ -91,10 +91,32 @@ vnode_ref_t ___vnode_dereference(vnode_ref_t node, size_t field_offset)
     return (vnode_ref_t){ field_value };
 }
 
+inode_ref_t ___vnode_dereference_inode(vnode_ref_t node, size_t field_offset)
+{
+    assert(node.ptr);
+    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    inode_t* field_value = *(inode_t**)((uintptr_t)node.ptr + field_offset);
+    if (field_value)
+        ref_inc(&field_value->ref);
+    release_spinlock_noint(&node.ptr->lock, flags);
+    return (inode_ref_t){ field_value };
+}
+
+mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_offset)
+{
+    assert(node.ptr);
+    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    mountpoint_t* field_value = *(mountpoint_t**)((uintptr_t)node.ptr + field_offset);
+    if (field_value)
+        ref_inc(&field_value->ref);
+    release_spinlock_noint(&node.ptr->lock, flags);
+    return (mountpoint_ref_t){ field_value };
+}
+
 void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
 {
     assert(ref && ref->ptr);
-    vnode_ref_t new_ref = ___vnode_dereference(*ref, field_offset);
+    vnode_ref_t new_ref = ___vnode_dereference_vnode(*ref, field_offset);
     vnode_delete_ref(ref);
     *ref = new_ref;
 }
@@ -118,13 +140,13 @@ void vfs_add_new_child_node(vnode_ref_t node, const char* name, struct stat st)
         return;
     }
 
-    child.ptr->mountpoint = mountpoint_struct_dereference(mountpoint_copy_ref(mountpoint_ref_dereference(node.ptr->mountpoint)));
+    child.ptr->mountpoint = vnode_dereference_mountpoint(node, mountpoint);
 
     uint32_t node_flags = node.ptr->flags;
     if (!(node_flags & VNODE_EXPLORED) && !(node_flags & VNODE_EXPLORING))
         vfs_explore(node);
 
-    vnode_ref_t ref = vnode_dereference(node, children);
+    vnode_ref_t ref = vnode_dereference_vnode(node, children);
     uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
 
     child.ptr->next = ref.ptr;
@@ -149,7 +171,7 @@ void vfs_unload_children(vnode_ref_t node)
 {
     assert(node.ptr);
 
-    vnode_ref_t child = vnode_dereference(node, children);
+    vnode_ref_t child = vnode_dereference_vnode(node, children);
     node.ptr->children.ptr = NULL;
     while (child.ptr)
     {
@@ -164,13 +186,38 @@ void vfs_unload_children(vnode_ref_t node)
         ref_dec(&child.ptr->ref);
         vnode_move_reference(&child, next);
     }
+
+    node.ptr->flags = VNODE_INIT;
+}
+
+void vfs_locked_unload_children(vnode_ref_t node)
+{
+    assert(node.ptr);
+
+    vnode_ref_t child = node.ptr->children;
+    node.ptr->children.ptr = NULL;
+    while (child.ptr)
+    {
+        uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
+        if (child.ptr->next)
+        {
+            uint32_t flags = acquire_spinlock_noint(&child.ptr->next->lock);
+            child.ptr->next->prev = NULL;
+            release_spinlock_noint(&child.ptr->next->lock, flags);
+        }
+        release_spinlock_noint(&child.ptr->lock, flags);
+        ref_dec(&child.ptr->ref);
+        vnode_move_reference(&child, next);
+    }
+
+    node.ptr->flags = VNODE_INIT;
 }
 
 void vfs_unparent_children(vnode_ref_t node)
 {
     assert(node.ptr);
 
-    vnode_ref_t child = vnode_dereference(node, children);
+    vnode_ref_t child = vnode_dereference_vnode(node, children);
     while (child.ptr)
     {
         child.ptr->parent = NULL;
@@ -191,7 +238,7 @@ void ___vnode_free(const struct ref* _ref)
     vfs_unparent_children(ref);
     vfs_unload_children(ref);
 
-    inode_ref_t inode_ref = inode_ref_dereference(node->inode);
+    inode_ref_t inode_ref = vnode_dereference_inode(ref, inode);
     uint32_t flags = acquire_spinlock_noint(&inode_ref.ptr->lock);
     inode_ref.ptr->st.st_nlink--;
     release_spinlock_noint(&inode_ref.ptr->lock, flags);
@@ -206,7 +253,7 @@ void vfs_log_structure_helper(vnode_ref_t node, int depth)
     assert(node.ptr);
 
     LOG(DEBUG, "%*s- \"%s\" (inode %ld) [refcount %d]%s", depth, "", node.ptr->name, (long)node.ptr->inode.ptr->st.st_ino, node.ptr->ref.count - 1, ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(node.ptr->inode.ptr->st.st_mode))) ? "" : " <NOT EXPLORED>");
-    vnode_ref_t child = vnode_dereference(node, children);
+    vnode_ref_t child = vnode_dereference_vnode(node, children);
     while (child.ptr)
     {
         vfs_log_structure_helper(child, depth + 4);
@@ -225,7 +272,7 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_ref_t ref, char* buf, size_t b
     assert(node);
     LOG(TRACE, "vfs_get_absolute_path_to_node_helper: %s", node->name);
     size_t offset = 0;
-    vnode_ref_t parent_ref = vnode_dereference(ref, parent);
+    vnode_ref_t parent_ref = vnode_dereference_vnode(ref, parent);
     if (parent_ref.ptr)
     {
         offset = vfs_get_absolute_path_to_node_helper(parent_ref, buf, bufsiz);
@@ -259,7 +306,7 @@ size_t vfs_count_nodes(vnode_ref_t ref)
     vnode_t* node = ref.ptr;
     assert(node);
     size_t total = 0;
-    vnode_ref_t child = vnode_dereference(ref, children);
+    vnode_ref_t child = vnode_dereference_vnode(ref, children);
     while (child.ptr)
     {
         total++;
@@ -271,7 +318,7 @@ size_t vfs_count_nodes(vnode_ref_t ref)
 
 bool vfs_verify_tree_integrity()
 {
-    size_t nodes = vfs_count_nodes(vnode_ref_dereference(vfs_root_node)) + 1;
+    size_t nodes = vfs_count_nodes(vfs_root_node) + 1;
     bool ret = nodes == vfs_total_nodes;
     #ifndef NDEBUG
     if (!ret)
@@ -295,10 +342,10 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
 {
     assert(_errno);
     assert(path);
-    if (!root.ptr) root = vnode_ref_dereference(vfs_root_node);
+    if (!root.ptr) root = vfs_root_node;
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
-    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->inode.ptr->st.st_mode)) ? vnode_dereference(cwd, parent) : vnode_copy_ref(cwd);
+    vnode_ref_t ecwd = (cwd.ptr && !S_ISDIR(cwd.ptr->inode.ptr->st.st_mode)) ? vnode_dereference_vnode(cwd, parent) : vnode_copy_ref(cwd);
     bool absolute_path = *path == '/';
     while (*path == '/') path++;
     if (!*path)
@@ -324,7 +371,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
         return (vnode_ref_t){ NULL };
     }
 
-    vnode_ref_t child = vnode_dereference(current, children);
+    vnode_ref_t child = vnode_dereference_vnode(current, children);
     size_t len = strlen_slash(path);
     int fake_entries = 2;
     while (fake_entries || child.ptr)
@@ -370,7 +417,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                             return (vnode_ref_t){ NULL };
                         }
                         vnode_delete_ref(&child);
-                        child = vnode_dereference(current, children);
+                        child = vnode_dereference_vnode(current, children);
                     }
                     if (!*path)
                     {
@@ -403,7 +450,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 vnode_ref_t _child = child;
                 char _path[PATH_MAX];
                 ssize_t ret;
-                if ((ret = vfs_read(child, _path, sizeof(_path), 0)) < 0)
+                if ((ret = vnode_read(child, _path, sizeof(_path), 0)) < 0)
                 {
                     vnode_delete_ref(&ecwd);
                     vnode_delete_ref(&current);
@@ -436,7 +483,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 vnode_delete_ref(&current);
                 return (vnode_ref_t){ NULL };
             }
-            child = vnode_dereference(current, children);
+            child = vnode_dereference_vnode(current, children);
             len = strlen_slash(path);
             fake_entries = 2;
             continue;
@@ -449,7 +496,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
     return (vnode_ref_t){ NULL };
 }
 
-ssize_t vfs_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
+ssize_t vnode_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     assert(node);
@@ -457,7 +504,7 @@ ssize_t vfs_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
     return ref.ptr->read(ref, buf, bytes, offset);
 }
 
-ssize_t vfs_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
+ssize_t vnode_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     assert(node);
@@ -484,6 +531,9 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     {
     case FSTYPE_VIRTUAL:
         mountpoint->generate_ino = virtfs_generate_ino;
+        mountpoint->explore = virtfs_explore;
+        mountpoint->read = virtfs_read;
+        mountpoint->write = virtfs_write;
         break;
 
     default:
@@ -492,8 +542,12 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
     mountpoint_ref_t old_ref = { ref.ptr->mountpoint.ptr };
     ref.ptr->mountpoint.ptr = mountpoint;
-    mountpoint_delete_ref(&old_ref);
+    ref.ptr->explore = mountpoint->explore;
+    ref.ptr->read = mountpoint->read;
+    ref.ptr->write = mountpoint->write;
     release_spinlock_noint(&ref.ptr->lock, flags);
+    mountpoint_delete_ref(&old_ref);
+    vfs_unload_children(ref);
     return 0;
 }
 
