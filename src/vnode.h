@@ -53,13 +53,16 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset);
 
 void ___vnode_free(const struct ref* ref);
 vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode);
-void vfs_add_new_child_node(vnode_ref_t node, const char* name, struct stat st);
+void vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st);
+void vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st, ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t));
+void vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid, ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t));
 void vfs_unload_children(vnode_ref_t node);
 void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
 vnode_ref_t vnode_copy_ref(vnode_ref_t ref);
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t root, vnode_ref_t cwd, bool follow_symlinks);
+void vfs_unmount(mountpoint_ref_t* ref);
 
 ssize_t vnode_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
 ssize_t vnode_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);

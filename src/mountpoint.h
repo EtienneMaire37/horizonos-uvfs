@@ -11,6 +11,7 @@ struct mountpoint
     
     vnode_ref_t root;
     dev_t dev;
+    vnode_ref_t dev_node;
     blksize_t blksize;
 
     ino_t (*generate_ino)();

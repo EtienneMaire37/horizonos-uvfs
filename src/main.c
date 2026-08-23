@@ -4,6 +4,7 @@
 
 #include "vnode.h"
 #include "inode.h"
+#include "fs/initrd.h"
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -38,6 +39,13 @@ int main()
     errno = vfs_mkdir("dev", vfs_root_node, 0755, 0, 0);
     if (errno)
         perror("Couldn't create /dev");
+    {
+        vnode_ref_t dev_node = vfs_get_vnode_from_path(&errno, 0, 0, "/dev", (vnode_ref_t){ NULL }, (vnode_ref_t){ NULL }, false);
+        if (errno)
+            abort();
+        vfs_add_new_special_child_node(dev_node, "initrd", S_IFCHR | S_IRUSR | S_IRGRP | S_IROTH, 0, 0, initrd_read_device, initrd_write_device);
+        vnode_delete_ref(&dev_node);
+    }
     while (true)
     {
         fflush(stdout);
