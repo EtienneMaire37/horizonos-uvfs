@@ -3,6 +3,7 @@
 #include "mountpoint_ref.h"
 #include "vnode_ref.h"
 #include "ref.h"
+#include "inode.h"
 #include <sys/types.h>
 
 struct mountpoint
@@ -15,6 +16,8 @@ struct mountpoint
     blksize_t blksize;
 
     ino_t (*generate_ino)();
+    void* (*create_inode)(const char*, vnode_ref_t, const struct stat*);
+    void (*free_inode)(inode_t*);
 
     int (*explore)(vnode_ref_t); 
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 

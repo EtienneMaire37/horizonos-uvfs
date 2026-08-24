@@ -2,6 +2,7 @@
 #include "mountpoint_ref.h"
 #include "ref.h"
 #include "vnode.h"
+#include "log.h"
 #include <stdlib.h>
 #include <assert.h>
 
@@ -23,6 +24,7 @@ mountpoint_ref_t mountpoint_copy_ref(mountpoint_ref_t ref)
 
 void ___mountpoint_free(const struct ref* ref)
 {
+    LOG(TRACE, "Freeing mountpoint");
     mountpoint_t* mountpoint = container_of(ref, mountpoint_t, ref);
     vnode_delete_ref(&mountpoint->root);
     vnode_delete_ref(&mountpoint->dev_node);
