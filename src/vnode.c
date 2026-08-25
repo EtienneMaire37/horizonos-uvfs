@@ -220,10 +220,17 @@ void vfs_unload_children(vnode_ref_t node)
             release_spinlock_noint(&child.ptr->next->lock, flags);
         }
         if (child.ptr->mountpoint.ptr->root.ptr == child.ptr)
+        {
+            release_spinlock_noint(&child.ptr->lock, flags);
             vfs_unmount(child);
-        release_spinlock_noint(&child.ptr->lock, flags);
+        }
+        else
+            release_spinlock_noint(&child.ptr->lock, flags);
         ref_dec(&child.ptr->ref);
+        vnode_ref_t old_child = vnode_copy_ref(child);
         vnode_move_reference(&child, next);
+        old_child.ptr->next = NULL;
+        vnode_delete_ref(&old_child);
     }
 }
 
