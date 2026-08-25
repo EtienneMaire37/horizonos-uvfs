@@ -47,7 +47,7 @@ int main()
             abort();
         }
         vfs_add_new_special_child_node(dev_node, "initrd", S_IFBLK | S_IRUSR | S_IRGRP | S_IROTH, 0, 0, initrd_read_device, initrd_write_device,
-                                       NULL, NULL);
+                                       initrd_open_device("./resources/initrd.tar"), initrd_close_device);
         vnode_delete_ref(&dev_node);
     }
     while (true)
@@ -150,7 +150,7 @@ int main()
             off_t offset = 0;
             while ((errno = vnode_read(node, buf, sizeof(buf), offset)) > 0)
             {
-                printf("%*s", (int)sizeof(buf), buf);
+                fwrite(buf, sizeof(buf), 1, stdout);
                 offset += sizeof(buf);
             }
             errno *= -1;
