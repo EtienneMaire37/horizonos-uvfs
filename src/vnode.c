@@ -172,12 +172,7 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
     child.ptr->parent = node.ptr;
 
     if (ref.ptr)
-    {
-        uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
-        child.ptr->next->prev = child.ptr;
         node.ptr->children.ptr = child.ptr;
-        release_spinlock_noint(&ref.ptr->lock, flags);
-    }
     else
         node.ptr->children.ptr = child.ptr;
 
@@ -213,12 +208,6 @@ void vfs_unload_children(vnode_ref_t node)
     while (child.ptr)
     {
         uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
-        if (child.ptr->next)
-        {
-            uint32_t flags = acquire_spinlock_noint(&child.ptr->next->lock);
-            child.ptr->next->prev = NULL;
-            release_spinlock_noint(&child.ptr->next->lock, flags);
-        }
         if (child.ptr->mountpoint.ptr->root.ptr == child.ptr)
         {
             release_spinlock_noint(&child.ptr->lock, flags);
