@@ -3,7 +3,6 @@
 #include <stdio.h>
 
 #ifdef LOG_LEVEL 
-
 static const char* log_level[] =
 {
     "[TRACE]",

@@ -546,9 +546,10 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         fstype_en = FSTYPE_INITRD;
     else
         return ENODEV;
-    
-    if (!ref.ptr || (!dev.ptr && fstype_en != FSTYPE_VIRTUAL)) return ENOENT;
-    if (fstype_en != FSTYPE_VIRTUAL)
+
+    bool need_vnode = fstype_en != FSTYPE_VIRTUAL && fstype_en != FSTYPE_INITRD;
+    if (!ref.ptr || (!dev.ptr && need_vnode)) return ENOENT;
+    if (need_vnode)
         if (!S_ISBLK(dev.ptr->inode.ptr->st.st_mode))
             return ENOTBLK;
     mountpoint_t* mountpoint = calloc(1, sizeof(mountpoint_t));

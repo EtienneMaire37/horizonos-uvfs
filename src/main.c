@@ -32,6 +32,7 @@ static inline char* get_input(char* buf, size_t bytes)
 int main()
 {
     assert(sizeof(vnode_ref_t) == sizeof(uintptr_t));
+    initrd_init("./resources/initrd.tar");
     vfs_create_root_node();
     errno = vfs_mount(vfs_root_node, (vnode_ref_t){ NULL }, "virt");
     if (errno)
@@ -46,8 +47,7 @@ int main()
             perror("Couldn't find vnode for /dev");
             abort();
         }
-        vfs_add_new_special_child_node(dev_node, "initrd", S_IFBLK | S_IRUSR | S_IRGRP | S_IROTH, 0, 0, initrd_read_device, initrd_write_device,
-                                       initrd_open_device("./resources/initrd.tar"), initrd_close_device);
+        // ...
         vnode_delete_ref(&dev_node);
     }
     while (true)
