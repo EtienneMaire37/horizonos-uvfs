@@ -1,5 +1,8 @@
 #include "initrd.h"
 #include "../inode.h"
+#include "../util/fs_specific.h"
+#include "../util/string.h"
+#include <limits.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -87,8 +90,20 @@ ino_t initrd_generate_ino()
 
 int initrd_explore(vnode_ref_t vnode)
 {
-    (void)vnode;
-    return ENOSYS;
+    char path[PATH_MAX];
+    vfs_get_relative_path_to_node_from_mountpoint(vnode, path, sizeof(path));
+    for (size_t i = 0; i < initrd_file_count; i++)
+    {
+        if (str_starts_with(initrd_files[i].name, path))
+        {
+            const char* node_name = &initrd_files[i].name[strlen(path) + 1];
+            size_t* fs_specific = malloc(sizeof(size_t));
+            *fs_specific = i;
+            if (vfs_add_new_child_node(vnode, node_name, &initrd_files[i].st, fs_specific, free_fs_specific))
+                free(fs_specific);
+        }
+    }
+    return 0;
 }
 ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {
@@ -118,7 +133,16 @@ void initrd_init(const char* path)
             break;
         size_t filesize = ustar_get_number(header.size, sizeof(header.size));
         size_t blocks = (filesize + 511) / 512;
-        initrd_files[initrd_file_count].name = strdup(header.name);
+        // Skip "./"
+        if (!(header.name[0] != 0 && header.name[1] != 0))
+        {
+            lseek(fd, blocks * 512, SEEK_CUR);
+            continue;
+        }
+        initrd_files[initrd_file_count].name = strdup(header.name + 1);
+        size_t len = strlen(initrd_files[initrd_file_count].name);
+        if (initrd_files[initrd_file_count].name[len - 1] == '/')
+            initrd_files[initrd_file_count].name[len - 1] = 0;
         initrd_files[initrd_file_count].size = filesize;
         initrd_files[initrd_file_count].data = malloc(blocks * 512);
         read(fd, initrd_files[initrd_file_count].data, blocks * 512);

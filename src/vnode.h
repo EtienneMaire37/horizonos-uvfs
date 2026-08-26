@@ -64,6 +64,7 @@ int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mo
 void vfs_unload_children(vnode_ref_t node);
 void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
+size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
 vnode_ref_t vnode_copy_ref(vnode_ref_t ref);
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t root, vnode_ref_t cwd, bool follow_symlinks);

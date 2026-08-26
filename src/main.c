@@ -4,6 +4,7 @@
 
 #include "vnode.h"
 #include "inode.h"
+#include "explore.h"
 #include "fs/initrd.h"
 #include <stdio.h>
 #include <errno.h>
@@ -54,7 +55,7 @@ int main()
     {
         fflush(stdout);
         char path[PATH_MAX], action[64];
-        printf("Action? (\n\tstat: stat node, \n\ttree: get tree from node, \n\tunload: unload children, \n\tmount: mount filesystem, \n\tunmount: unmount filesystem, \n\tread: print file contents, \n\tmkdir: create folder) ");
+        printf("Action? (\n\tstat: stat node, \n\ttree: get tree from node, \n\tunload: unload children, \n\tmount: mount filesystem, \n\tunmount: unmount filesystem, \n\tread: print file contents, \n\tmkdir: create folder, \n\texplore: explore folder) ");
         fflush(stdout);
         char* ret = get_input(action, sizeof(action));
         if (!ret)
@@ -179,6 +180,16 @@ int main()
             }
             else
                 perror("Couldn't find parent");
+        }
+        else if (strcmp(action, "explore") == 0)
+        {
+            if (!node.ptr)
+            {
+                errno = _errno;
+                perror("Couldn't read vnode");
+                continue;                    
+            }
+            vfs_explore(node);
         }
         else
             printf("Invalid action\n");

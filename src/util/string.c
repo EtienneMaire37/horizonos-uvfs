@@ -23,3 +23,13 @@ size_t strlen_slash(const char* str)
     }
     return len;
 }
+
+bool str_starts_with(const char* str, const char* prefix)
+{
+    while (*str && *prefix && *str == *prefix)
+    {
+        str++;
+        prefix++;
+    }
+    return !*prefix;
+}
