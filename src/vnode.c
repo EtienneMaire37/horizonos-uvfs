@@ -510,7 +510,7 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
             while (*path == '/')
                 path++;
             vnode_delete_ref(&current);
-            if ((*path && !S_ISDIR(child.ptr->inode.ptr->st.st_mode)) || (!*path && S_ISLNK(child.ptr->inode.ptr->st.st_mode)))
+            if ((*path && !S_ISDIR(child.ptr->inode.ptr->st.st_mode)) || (!*path && S_ISLNK(child.ptr->inode.ptr->st.st_mode) && follow_symlinks))
             {
                 if (*path && !S_ISLNK(child.ptr->inode.ptr->st.st_mode))
                 {
@@ -532,15 +532,17 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 child = vfs_get_vnode_from_path(_errno, uid, gid, _path, root, _child, follow_symlinks);
                 vnode_delete_ref(&_child);
             }
-            bool x = (uid == child.ptr->inode.ptr->st.st_uid) ? (child.ptr->inode.ptr->st.st_mode & S_IXUSR) :
-                    ((gid == child.ptr->inode.ptr->st.st_gid) ? (child.ptr->inode.ptr->st.st_mode & S_IXGRP) :
-                                                     (child.ptr->inode.ptr->st.st_mode & S_IXOTH));
             if (!*path)
             {
                 vnode_delete_ref(&ecwd);
                 vnode_delete_ref(&current);
+                if (!child.ptr)
+                    *_errno = ENOENT;
                 return child;
             }
+            bool x = (uid == child.ptr->inode.ptr->st.st_uid) ? (child.ptr->inode.ptr->st.st_mode & S_IXUSR) :
+                    ((gid == child.ptr->inode.ptr->st.st_gid) ? (child.ptr->inode.ptr->st.st_mode & S_IXGRP) :
+                                                     (child.ptr->inode.ptr->st.st_mode & S_IXOTH));
             if (uid != 0 && !x)
             {
                 vnode_delete_ref(&ecwd);

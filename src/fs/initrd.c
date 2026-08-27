@@ -14,7 +14,6 @@ typedef char tar_file_type;
 typedef struct initrd_file
 {
     char* name;
-    uint64_t size;
     uint8_t* data;
     struct stat st;
     char* link;
@@ -105,11 +104,31 @@ int initrd_explore(vnode_ref_t vnode)
 }
 ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {
-    (void)vnode;
-    (void)buf;
-    (void)count;
-    (void)offset;
-    return -ENOSYS;
+    if (offset < 0) return EINVAL;
+    initrd_file_t* file = &initrd_files[*(size_t*)vnode.ptr->inode.ptr->fs_specific];
+    size_t filesize = S_ISLNK(file->st.st_mode) ? strlen(file->link) : (size_t)file->st.st_size;
+    if (S_ISREG(file->st.st_mode))
+    {
+        if ((size_t)offset >= filesize)
+            return 0;
+        if ((size_t)(offset + count) > filesize)
+            count = filesize - offset;
+        memcpy(buf, file->data + offset, count);
+        return count;
+    }
+    else if (S_ISLNK(file->st.st_mode))
+    {
+        if ((size_t)offset >= filesize)
+            return 0;
+        if ((size_t)(offset + count) > filesize)
+            count = filesize - offset;
+        memcpy(buf, file->link + offset, count);
+        return count;
+    }
+    else if (S_ISDIR(file->st.st_mode))
+        return -EISDIR;
+    else
+        return -ENOSYS;
 }
 ssize_t initrd_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {
@@ -119,6 +138,7 @@ ssize_t initrd_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
     (void)offset;
     return -EROFS;
 }
+
 void initrd_init(const char* path)
 {
     int fd = open(path, O_RDONLY);
@@ -141,7 +161,6 @@ void initrd_init(const char* path)
         size_t len = strlen(initrd_files[initrd_file_count].name);
         if (initrd_files[initrd_file_count].name[len - 1] == '/')
             initrd_files[initrd_file_count].name[len - 1] = 0;
-        initrd_files[initrd_file_count].size = filesize;
         initrd_files[initrd_file_count].data = malloc(blocks * 512);
         read(fd, initrd_files[initrd_file_count].data, blocks * 512);
         initrd_files[initrd_file_count].link = strdup(header.linked_file);
@@ -151,6 +170,7 @@ void initrd_init(const char* path)
         initrd_files[initrd_file_count].st.st_uid = header.owner_id;
         initrd_files[initrd_file_count].st.st_gid = header.group_id;
         initrd_files[initrd_file_count].st.st_ino = initrd_generate_ino();
+        initrd_files[initrd_file_count].st.st_size = filesize;
         mode_t filetype;
         switch (header.type)
         {
