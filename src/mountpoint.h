@@ -17,7 +17,7 @@ struct mountpoint
 
     ino_t (*generate_ino)();
     void* (*create_inode)(const char*, vnode_ref_t, const struct stat*);
-    void (*free_inode)(inode_t*);
+    void (*free_inode)(void*);
 
     int (*explore)(vnode_ref_t); 
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 

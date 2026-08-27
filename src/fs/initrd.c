@@ -1,6 +1,5 @@
 #include "initrd.h"
 #include "../inode.h"
-#include "../util/fs_specific.h"
 #include "../util/string.h"
 #include <limits.h>
 #include <assert.h>
@@ -99,8 +98,7 @@ int initrd_explore(vnode_ref_t vnode)
             const char* node_name = &initrd_files[i].name[strlen(path) + 1];
             size_t* fs_specific = malloc(sizeof(size_t));
             *fs_specific = i;
-            if (vfs_add_new_child_node(vnode, node_name, &initrd_files[i].st, fs_specific, free_fs_specific))
-                free(fs_specific);
+            vfs_add_new_child_node(vnode, node_name, &initrd_files[i].st, fs_specific, free);
         }
     }
     return 0;

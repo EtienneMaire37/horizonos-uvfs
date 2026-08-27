@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-inode_ref_t vfs_create_new_inode(const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(inode_t*))
+inode_ref_t vfs_create_new_inode(const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*))
 {
     assert(st);
     inode_t* newn = calloc(1, sizeof(inode_t));
@@ -20,7 +20,7 @@ inode_ref_t vfs_create_new_inode(const struct stat* st, void* fs_specific, void 
 void ___inode_free(const struct ref* _ref)
 {
     inode_t* inode = container_of(_ref, inode_t, ref);
-    if (inode->free_fs_specific_data) inode->free_fs_specific_data(inode);
+    if (inode->free_fs_specific_data) inode->free_fs_specific_data(inode->fs_specific);
     free(inode);
 }
 
