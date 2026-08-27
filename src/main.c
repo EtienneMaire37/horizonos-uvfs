@@ -6,6 +6,7 @@
 #include "inode.h"
 #include "explore.h"
 #include "fs/initrd.h"
+#include "fs/null.h"
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -48,9 +49,16 @@ int main()
             perror("Couldn't find vnode for /dev");
             abort();
         }
-        // ...
+
+        vfs_add_new_special_child_node(dev_node, "null", S_IFCHR | 0666, 0, 0, null_read, null_write, NULL, NULL);
+        vfs_add_new_special_child_node(dev_node, "tty", S_IFCHR | 0666, 0, 0, NULL, NULL, NULL, NULL);
+        vfs_add_new_special_child_node(dev_node, "console", S_IFCHR | 0666, 0, 0, NULL, NULL, NULL, NULL);
+        
         vnode_delete_ref(&dev_node);
     }
+    errno = vfs_mkdir("tmp", vfs_root_node, 01777, 0, 0);
+    if (errno)
+        perror("Couldn't create /tmp");
     while (true)
     {
         fflush(stdout);
