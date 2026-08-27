@@ -1,6 +1,7 @@
 #include "initrd.h"
 #include "../inode.h"
 #include "../util/string.h"
+#include "../log.h"
 #include <limits.h>
 #include <assert.h>
 #include <errno.h>
@@ -162,7 +163,11 @@ void initrd_init(const char* path)
         if (initrd_files[initrd_file_count].name[len - 1] == '/')
             initrd_files[initrd_file_count].name[len - 1] = 0;
         initrd_files[initrd_file_count].data = malloc(blocks * 512);
-        read(fd, initrd_files[initrd_file_count].data, blocks * 512);
+        if (read(fd, initrd_files[initrd_file_count].data, blocks * 512) == -1)
+        {
+            LOG(ERROR, "Coudln't read file data from initrd");
+            abort();
+        }
         initrd_files[initrd_file_count].link = strdup(header.linked_file);
         initrd_files[initrd_file_count].st.st_nlink = 1;
         initrd_files[initrd_file_count].st.st_blksize = 512;
