@@ -145,7 +145,8 @@ int main()
                 perror("Couldn't read vnode");
                 continue;                    
             }
-            vfs_unmount(node);
+            if ((errno = vfs_unmount(node)))
+                perror("Couldn't unmount node");
         }
         else if (strcmp(action, "read") == 0)
         {

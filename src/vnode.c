@@ -81,14 +81,15 @@ void vnode_delete_ref(vnode_ref_t* ref)
         ref_dec(ref_ref);
 }
 
-vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset)
+vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset, bool locked)
 {
     assert(node.ptr);
-    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
     vnode_t* field_value = *(vnode_t**)((uintptr_t)node.ptr + field_offset);
     if (field_value)
         ref_inc(&field_value->ref);
-    release_spinlock_noint(&node.ptr->lock, flags);
+    if (!locked)
+        release_spinlock_noint(&node.ptr->lock, flags);
     return (vnode_ref_t){ field_value };
 }
 
@@ -117,7 +118,7 @@ mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_
 void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
 {
     assert(ref && ref->ptr);
-    vnode_ref_t new_ref = ___vnode_dereference_vnode(*ref, field_offset);
+    vnode_ref_t new_ref = ___vnode_dereference_vnode(*ref, field_offset, false);
     vnode_delete_ref(ref);
     *ref = new_ref;
 }
@@ -202,15 +203,18 @@ int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mo
     return vfs_add_new_child_node_ex(node, name, (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, read, write, fs_specific, free_fs_specific_data);
 }
 
-void vfs_unload_children(vnode_ref_t node)
+void _vfs_unload_children(vnode_ref_t node, bool locked)
 {
     assert(node.ptr);
 
-    vnode_ref_t child = vnode_dereference_vnode(node, children);
-    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    vnode_ref_t child = locked ?
+                               vnode_dereference_vnode_locked(node, children) :
+                               vnode_dereference_vnode(node, children);
+    uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
     node.ptr->children.ptr = NULL;
     node.ptr->flags &= ~VNODE_EXPLORED;
-    release_spinlock_noint(&node.ptr->lock, flags);
+    if (!locked)
+        release_spinlock_noint(&node.ptr->lock, flags);
     while (child.ptr)
     {
         uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
@@ -241,21 +245,31 @@ void vfs_unparent_children(vnode_ref_t node)
     }
 }
 
-void vfs_unmount(vnode_ref_t ref)
+int vfs_unmount(vnode_ref_t ref)
 {
     assert(ref.ptr);
-    vnode_ref_t parent = vnode_dereference_vnode(ref, parent);
-    mountpoint_delete_ref(&ref.ptr->mountpoint);
     uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
+    if (ref.ptr->mountpoint.ptr->root.ptr != ref.ptr)
+    {
+        release_spinlock_noint(&ref.ptr->lock, flags);
+        return EINVAL;
+    }
+    vnode_ref_t parent = vnode_dereference_vnode_locked(ref, parent);
+    if (!parent.ptr)
+    {
+        release_spinlock_noint(&ref.ptr->lock, flags);
+        LOG(ERROR, "Tried to unmount root");
+        return EPERM;
+    }
+    mountpoint_delete_ref(&ref.ptr->mountpoint);
     ref.ptr->mountpoint.ptr = mountpoint_copy_ref(parent.ptr->mountpoint).ptr;
     ref.ptr->explore = ref.ptr->mountpoint.ptr->explore;
     ref.ptr->read = ref.ptr->mountpoint.ptr->read;
     ref.ptr->write = ref.ptr->mountpoint.ptr->write;
+    vfs_unload_children_locked(ref);
     release_spinlock_noint(&ref.ptr->lock, flags);
-    // Definitely not MT-safe
-    // might be if i handle errors properly everywhere else though
-    vfs_unload_children(ref);
     vnode_delete_ref(&parent);
+    return 0;
 }
 
 void ___vnode_free(const struct ref* _ref)

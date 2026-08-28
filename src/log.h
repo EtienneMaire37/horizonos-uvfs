@@ -20,7 +20,7 @@ static const char* log_level[] =
 #define ERROR       4
 #define FATAL       5
 
-#define LOG(level, ...) do { if (level >= LOG_LEVEL) { fprintf(stderr, "%s\t", log_level[level % (sizeof(log_level) / sizeof(log_level[0]))]); fprintf(stderr, __VA_ARGS__); putchar('\n'); } } while (0)
+#define LOG(level, ...) do { if (level >= LOG_LEVEL) { fprintf(stderr, "%s\t", log_level[level % (sizeof(log_level) / sizeof(log_level[0]))]); fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
 #else
 #define LOG(level, ...)
 #endif
