@@ -10,4 +10,4 @@ SOURCE := $(shell find src -name '*.h') $(SOURCE_CU)
 
 bin/uvfs-test: $(SOURCE) Makefile
 	mkdir -p bin
-	${CC} -fanalyzer -fsanitize=undefined,address,leak -g -Og -Wall -Wextra -Werror -o $@ $(SOURCE_CU) ${CFLAGS}
+	${CC} -fanalyzer -fsanitize=undefined,address,leak -g -Og -march=native -Wall -Wextra -Werror -o $@ $(SOURCE_CU) ${CFLAGS}
