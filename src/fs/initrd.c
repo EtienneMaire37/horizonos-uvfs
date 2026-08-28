@@ -107,29 +107,14 @@ ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {
     if (offset < 0) return EINVAL;
     initrd_file_t* file = &initrd_files[*(size_t*)vnode.ptr->inode.ptr->fs_specific];
-    size_t filesize = S_ISLNK(file->st.st_mode) ? strlen(file->link) : (size_t)file->st.st_size;
-    if (S_ISREG(file->st.st_mode))
-    {
-        if ((size_t)offset >= filesize)
-            return 0;
-        if ((size_t)(offset + count) > filesize)
-            count = filesize - offset;
-        memcpy(buf, file->data + offset, count);
-        return count;
-    }
-    else if (S_ISLNK(file->st.st_mode))
-    {
-        if ((size_t)offset >= filesize)
-            return 0;
-        if ((size_t)(offset + count) > filesize)
-            count = filesize - offset;
-        memcpy(buf, file->link + offset, count);
-        return count;
-    }
-    else if (S_ISDIR(file->st.st_mode))
-        return -EISDIR;
-    else
-        return -ENOSYS;
+    size_t filesize =    S_ISLNK(file->st.st_mode) ? strlen(file->link) :
+                        (S_ISREG(file->st.st_mode) ? (size_t)file->st.st_size : 0);
+    if ((size_t)offset >= filesize)
+        return 0;
+    if ((size_t)(offset + count) > filesize)
+        count = filesize - offset;
+    memcpy(buf, (S_ISREG(file->st.st_mode) ? file->data : (uint8_t*)file->link) + offset, count);
+    return count;
 }
 ssize_t initrd_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {

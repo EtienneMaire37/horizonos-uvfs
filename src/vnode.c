@@ -532,13 +532,14 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 vnode_ref_t _child = child;
                 char _path[PATH_MAX];
                 ssize_t ret;
-                if ((ret = vnode_read(child, _path, sizeof(_path), 0)) < 0)
+                if ((ret = vnode_read(child, _path, sizeof(_path) - 1, 0)) < 0)
                 {
                     vnode_delete_ref(&ecwd);
                     vnode_delete_ref(&current);
                     *_errno = -ret;
                     return (vnode_ref_t){ NULL };
                 }
+                _path[ret] = 0;
                 child = vfs_get_vnode_from_path(_errno, uid, gid, _path, root, _child, follow_symlinks);
                 vnode_delete_ref(&_child);
             }
