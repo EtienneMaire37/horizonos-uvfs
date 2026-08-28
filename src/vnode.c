@@ -177,11 +177,7 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
 
     child.ptr->next = ref.ptr;
     child.ptr->parent = node.ptr;
-
-    if (ref.ptr)
-        node.ptr->children.ptr = child.ptr;
-    else
-        node.ptr->children.ptr = child.ptr;
+    node.ptr->children.ptr = child.ptr;
 
     release_spinlock_noint(&node.ptr->lock, flags);
 
