@@ -29,7 +29,6 @@ struct vnode
     vnode_flags_t flags;
     mountpoint_ref_t mountpoint;
 
-    int (*_Atomic explore)(vnode_ref_t); 
     ssize_t (*_Atomic read)(vnode_ref_t, void*, size_t, off_t); 
     ssize_t (*_Atomic write)(vnode_ref_t, void*, size_t, off_t); 
 };
@@ -37,7 +36,8 @@ struct vnode
 #define vnode_dereference_vnode(vnode, field)       ___vnode_dereference_vnode((vnode), offsetof(vnode_t, field), false)
 #define vnode_dereference_vnode_locked(vnode, field)       ___vnode_dereference_vnode((vnode), offsetof(vnode_t, field), true)
 #define vnode_dereference_inode(vnode, field)       ___vnode_dereference_inode((vnode), offsetof(vnode_t, field))
-#define vnode_dereference_mountpoint(vnode, field)       ___vnode_dereference_mountpoint((vnode), offsetof(vnode_t, field))
+#define vnode_dereference_mountpoint(vnode, field)       ___vnode_dereference_mountpoint((vnode), offsetof(vnode_t, field), false)
+#define vnode_dereference_mountpoint_locked(vnode, field)       ___vnode_dereference_mountpoint((vnode), offsetof(vnode_t, field), true)
 #define vnode_move_reference(vnode, field)       ___vnode_move_reference((vnode), offsetof(vnode_t, field))
 
 #define VNODE_REF_INIT ((struct ref){___vnode_free, 1})
@@ -49,7 +49,7 @@ void vfs_create_root_node();
 
 vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset, bool locked);
 inode_ref_t ___vnode_dereference_inode(vnode_ref_t node, size_t field_offset);
-mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_offset);
+mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_offset, bool locked);
 void vnode_delete_ref(vnode_ref_t* ref);
 void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset);
 

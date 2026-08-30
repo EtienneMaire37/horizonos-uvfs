@@ -104,14 +104,15 @@ inode_ref_t ___vnode_dereference_inode(vnode_ref_t node, size_t field_offset)
     return (inode_ref_t){ field_value };
 }
 
-mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_offset)
+mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_offset, bool locked)
 {
     assert(node.ptr);
-    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
     mountpoint_t* field_value = *(mountpoint_t**)((uintptr_t)node.ptr + field_offset);
     if (field_value)
         ref_inc(&field_value->ref);
-    release_spinlock_noint(&node.ptr->lock, flags);
+    if (!locked)
+        release_spinlock_noint(&node.ptr->lock, flags);
     return (mountpoint_ref_t){ field_value };
 }
 
@@ -152,7 +153,6 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
     child.ptr->mountpoint = vnode_dereference_mountpoint(node, mountpoint);
     child.ptr->read = read ? read : child.ptr->mountpoint.ptr->read;
     child.ptr->write = write ? write : child.ptr->mountpoint.ptr->write;
-    child.ptr->explore = child.ptr->mountpoint.ptr->explore;
 
     uint32_t node_flags = node.ptr->flags;
     if (!(node_flags & VNODE_EXPLORED) && !(node_flags & VNODE_EXPLORING))
@@ -203,12 +203,17 @@ void _vfs_unload_children(vnode_ref_t node, bool locked)
 {
     assert(node.ptr);
 
-    vnode_ref_t child = locked ?
-                               vnode_dereference_vnode_locked(node, children) :
-                               vnode_dereference_vnode(node, children);
     uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
+    vnode_ref_t child = vnode_dereference_vnode_locked(node, children);
     node.ptr->children.ptr = NULL;
     node.ptr->flags &= ~VNODE_EXPLORED;
+    mountpoint_ref_t mp = vnode_dereference_mountpoint_locked(node, mountpoint);
+    if (mp.ptr)
+    {
+        void (*flush)(vnode_ref_t) = node.ptr->mountpoint.ptr->flush;
+        if (flush) flush(node);
+    }
+    mountpoint_delete_ref(&mp);
     if (!locked)
         release_spinlock_noint(&node.ptr->lock, flags);
     while (child.ptr)
@@ -259,7 +264,6 @@ int vfs_unmount(vnode_ref_t ref)
     }
     mountpoint_delete_ref(&ref.ptr->mountpoint);
     ref.ptr->mountpoint.ptr = mountpoint_copy_ref(parent.ptr->mountpoint).ptr;
-    ref.ptr->explore = ref.ptr->mountpoint.ptr->explore;
     ref.ptr->read = ref.ptr->mountpoint.ptr->read;
     ref.ptr->write = ref.ptr->mountpoint.ptr->write;
     vfs_unload_children_locked(ref);
@@ -626,6 +630,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         mountpoint->explore = virtfs_explore;
         mountpoint->read = virtfs_read;
         mountpoint->write = virtfs_write;
+        mountpoint->flush = virtfs_flush;
         break;
     case FSTYPE_INITRD:
         mountpoint->generate_ino = initrd_generate_ino;
@@ -638,14 +643,13 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         ;
     }
     uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
+    vfs_unload_children_locked(ref);
     mountpoint_ref_t old_ref = { ref.ptr->mountpoint.ptr };
     ref.ptr->mountpoint.ptr = mountpoint;
-    ref.ptr->explore = mountpoint->explore;
     ref.ptr->read = mountpoint->read;
     ref.ptr->write = mountpoint->write;
     release_spinlock_noint(&ref.ptr->lock, flags);
     mountpoint_delete_ref(&old_ref);
-    vfs_unload_children(ref);
     return 0;
 }
 
