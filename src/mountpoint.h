@@ -23,6 +23,9 @@ struct mountpoint
     ssize_t (*_Atomic read)(vnode_ref_t, void*, size_t, off_t); 
     ssize_t (*_Atomic write)(vnode_ref_t, void*, size_t, off_t); 
     void (*_Atomic flush)(vnode_ref_t);
+
+    void* data;
+    void (*free_data)(void*);
 };
 
 #define MOUNTPOINT_REF_INIT ((struct ref){ .count = 1, .free = ___mountpoint_free })

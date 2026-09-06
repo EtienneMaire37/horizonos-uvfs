@@ -426,6 +426,7 @@ vnode_ref_t vnode_copy_ref(vnode_ref_t ref)
 
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t root, vnode_ref_t cwd, bool follow_symlinks)
 {
+    // TODO: Cache path --> vnode in a hashmap (and then iterate on successive parents for permissions)
     assert(_errno);
     assert(path);
     if (!root.ptr) root = vfs_root_node;
@@ -631,6 +632,8 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         mountpoint->read = virtfs_read;
         mountpoint->write = virtfs_write;
         mountpoint->flush = virtfs_flush;
+        mountpoint->data = NULL;
+        mountpoint->free_data = virtfs_free_data;
         break;
     case FSTYPE_INITRD:
         mountpoint->generate_ino = initrd_generate_ino;
@@ -653,6 +656,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     return 0;
 }
 
+// TODO: Add corresponding functions in mountpoints and make virtual file systems stay on unload
 int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gid_t gid)
 {
     mountpoint_t* mountpoint = parent.ptr->mountpoint.ptr;

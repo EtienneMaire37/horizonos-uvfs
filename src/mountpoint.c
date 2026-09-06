@@ -26,6 +26,9 @@ void ___mountpoint_free(const struct ref* ref)
 {
     LOG(TRACE, "Freeing mountpoint");
     mountpoint_t* mountpoint = container_of(ref, mountpoint_t, ref);
+    void (*free_data)(void* data) = mountpoint->free_data;
+    if (free_data)
+        free_data(mountpoint->data);
     vnode_delete_ref(&mountpoint->root);
     vnode_delete_ref(&mountpoint->dev_node);
     free(mountpoint);

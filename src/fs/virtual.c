@@ -29,8 +29,11 @@ ssize_t virtfs_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
     return -ENOSYS;
 }
 
-#include <stdio.h>
 void virtfs_flush(vnode_ref_t vnode)
 {
-    fprintf(stderr, "virtfs_flush({.name = \"%s\"})\n", vnode.ptr->name);
+    (void)vnode;
+}
+void virtfs_free_data(void* node_ref)
+{
+    (void)node_ref;
 }
