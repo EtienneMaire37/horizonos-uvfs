@@ -9,20 +9,21 @@
 struct mountpoint
 {
     struct ref ref;
-    
+
     vnode_ref_t root;
     dev_t dev;
     vnode_ref_t dev_node;
     blksize_t blksize;
 
-    ino_t (*_Atomic generate_ino)();
-    void* (*_Atomic create_inode)(const char*, vnode_ref_t, const struct stat*);
-    void (*_Atomic free_inode)(void*);
+    ino_t (*generate_ino)();
+    // void* (*create_inode)(const char*, vnode_ref_t, const struct stat*);
+    // void (*free_inode)(void*);
 
-    int (*_Atomic explore)(vnode_ref_t); 
-    ssize_t (*_Atomic read)(vnode_ref_t, void*, size_t, off_t); 
-    ssize_t (*_Atomic write)(vnode_ref_t, void*, size_t, off_t); 
-    void (*_Atomic flush)(vnode_ref_t);
+    int (*explore)(vnode_ref_t); 
+    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 
+    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t); 
+    // TODO: Add more operations like file/folder creation/deletion
+    void (*flush)(vnode_ref_t);
 
     void* data;
     void (*free_data)(void*);

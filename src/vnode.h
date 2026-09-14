@@ -30,7 +30,7 @@ struct vnode
     mountpoint_ref_t mountpoint;
 
     ssize_t (*_Atomic read)(vnode_ref_t, void*, size_t, off_t); 
-    ssize_t (*_Atomic write)(vnode_ref_t, void*, size_t, off_t); 
+    ssize_t (*_Atomic write)(vnode_ref_t, void*, size_t, off_t);
 };
 
 #define vnode_dereference_vnode(vnode, field)       ___vnode_dereference_vnode((vnode), offsetof(vnode_t, field), false)
@@ -68,6 +68,7 @@ void vfs_unload_children(vnode_ref_t node);
 void _vfs_unload_children(vnode_ref_t node, bool locked);
 void vfs_log_structure(vnode_ref_t node);
 size_t vfs_get_absolute_path_to_node(vnode_ref_t node, char* buf, size_t bufsiz);
+// Only call with the mountpoint_locked
 size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf, size_t bufsiz);
 bool vfs_verify_tree_integrity();
 vnode_ref_t vnode_copy_ref(vnode_ref_t ref);

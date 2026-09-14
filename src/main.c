@@ -4,6 +4,7 @@
 
 #include "vnode.h"
 #include "inode.h"
+#include "log.h"
 #include "explore.h"
 #include "fs/initrd.h"
 #include "fs/null.h"
@@ -36,10 +37,13 @@ int main()
     assert(sizeof(vnode_ref_t) == sizeof(uintptr_t));
     initrd_init("./resources/initrd.tar");
     vfs_create_root_node();
+    LOG(DEBUG, "Mounting initrd at root");
     errno = vfs_mount(vfs_root_node, (vnode_ref_t){ NULL }, "virt");
     if (errno)
         perror("Couldn't mount root");
+    LOG(DEBUG, "Creating /dev");
     errno = vfs_mkdir("dev", vfs_root_node, 0755, 0, 0);
+    LOG(TRACE, "Done");
     if (errno)
         perror("Couldn't create /dev");
     {
@@ -56,6 +60,7 @@ int main()
         
         vnode_delete_ref(&dev_node);
     }
+    LOG(DEBUG, "Creating /tmp");
     errno = vfs_mkdir("tmp", vfs_root_node, 01777, 0, 0);
     if (errno)
         perror("Couldn't create /tmp");

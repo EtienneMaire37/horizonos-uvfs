@@ -26,6 +26,8 @@ _Atomic size_t vfs_total_nodes = 0;
 
 void vfs_create_root_node()
 {
+    LOG(DEBUG, "VFS: Creating root vnode and inode");
+    
     struct stat st;
     st.st_atim = (struct timespec){ 0, 0 };
     st.st_ctim = (struct timespec){ 0, 0 };
@@ -47,6 +49,8 @@ void vfs_create_root_node()
     inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL);
     vfs_root_node = vfs_create_new_vnode("/", inode);
     inode_delete_ref(&inode);
+
+    LOG(DEBUG, "Done");
 }
 
 vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
@@ -135,9 +139,11 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
     if (strchr(name, '/')) vadncne_ret(EINVAL);
     if (!*name) vadncne_ret(EINVAL);
 
-    st.st_blksize = node.ptr->mountpoint.ptr->blksize;
-    st.st_dev = node.ptr->mountpoint.ptr->dev;
-    st.st_ino = node.ptr->mountpoint.ptr->generate_ino();
+    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    st.st_blksize = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->blksize : 4096;
+    st.st_dev = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->dev : (dev_t)-1;
+    st.st_ino = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->generate_ino() : 0;
+    release_spinlock_noint(&node.ptr->lock, flags);
 
     inode_ref_t inode = vfs_create_new_inode(&st, fs_specific, free_fs_specific_data);
     vnode_ref_t child = vfs_create_new_vnode(name, inode);
@@ -159,7 +165,7 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
         vfs_explore(node);
 
     vnode_ref_t ref = vnode_dereference_vnode(node, children);
-    uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
+    flags = acquire_spinlock_noint(&node.ptr->lock);
 
     vnode_ref_t test_ref = vnode_copy_ref(ref);
     while (test_ref.ptr)
@@ -199,6 +205,14 @@ int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mo
     return vfs_add_new_child_node_ex(node, name, (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, read, write, fs_specific, free_fs_specific_data);
 }
 
+bool vnode_is_mountpoint_locked(vnode_ref_t node)
+{
+    mountpoint_ref_t mp = vnode_dereference_mountpoint_locked(node, mountpoint);
+    bool ret = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->root.ptr == node.ptr : false;
+    mountpoint_delete_ref(&mp);
+    return ret;
+}
+
 void _vfs_unload_children(vnode_ref_t node, bool locked)
 {
     assert(node.ptr);
@@ -210,7 +224,7 @@ void _vfs_unload_children(vnode_ref_t node, bool locked)
     mountpoint_ref_t mp = vnode_dereference_mountpoint_locked(node, mountpoint);
     if (mp.ptr)
     {
-        void (*flush)(vnode_ref_t) = node.ptr->mountpoint.ptr->flush;
+        void (*flush)(vnode_ref_t) = mp.ptr->flush;
         if (flush) flush(node);
     }
     mountpoint_delete_ref(&mp);
@@ -219,7 +233,7 @@ void _vfs_unload_children(vnode_ref_t node, bool locked)
     while (child.ptr)
     {
         uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
-        if (child.ptr->mountpoint.ptr->root.ptr == child.ptr)
+        if (vnode_is_mountpoint_locked(child))
         {
             release_spinlock_noint(&child.ptr->lock, flags);
             vfs_unmount(child);
@@ -354,16 +368,16 @@ size_t vfs_get_absolute_path_to_node(vnode_ref_t ref, char* buf, size_t bufsiz)
     return ret;
 }
 
-size_t vfs_get_relative_path_to_node_from_mountpoint_helper(vnode_ref_t ref, char* buf, size_t bufsiz)
+size_t vfs_get_relative_path_to_node_from_mountpoint_helper(vnode_ref_t start_node, vnode_ref_t ref, char* buf, size_t bufsiz)
 {
     vnode_t* node = ref.ptr;
     assert(node);
     LOG(TRACE, "vfs_get_relative_path_to_node_from_mountpoint_helper: %s", node->name);
     size_t offset = 0;
     vnode_ref_t parent_ref = vnode_dereference_vnode(ref, parent);
-    if (parent_ref.ptr && node->mountpoint.ptr->root.ptr != node)
+    if (parent_ref.ptr && start_node.ptr->mountpoint.ptr->root.ptr != ref.ptr)
     {
-        offset = vfs_get_relative_path_to_node_from_mountpoint_helper(parent_ref, buf, bufsiz);
+        offset = vfs_get_relative_path_to_node_from_mountpoint_helper(start_node, parent_ref, buf, bufsiz);
         vnode_delete_ref(&parent_ref);
         if (offset < bufsiz)
         {
@@ -383,8 +397,16 @@ size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf,
     assert(buf);
     assert(node);
     size_t ret;
+    // Can return invalid paths on a file which was on an unmounted mountpoint,
+    // as its parents can be unloaded before it.
+    // should'n cause any real problems though (?)
+    // TODO: Handle this cleanly
     if (node->parent)
-        buf[(ret = vfs_get_relative_path_to_node_from_mountpoint_helper(ref, buf, bufsiz - 1) + 1)] = 0;
+    {
+        vnode_ref_t start_ref = vnode_copy_ref(ref);
+        buf[(ret = vfs_get_relative_path_to_node_from_mountpoint_helper(start_ref, ref, buf, bufsiz - 1) + 1)] = 0;
+        vnode_delete_ref(&start_ref);
+    }
     else
         strcpy(buf, (ret = 2, "/"));
     return ret;
@@ -659,8 +681,8 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
 // TODO: Add corresponding functions in mountpoints and make virtual file systems stay on unload
 int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gid_t gid)
 {
-    mountpoint_t* mountpoint = parent.ptr->mountpoint.ptr;
-    if (!mountpoint) return EPERM;
+    // mountpoint_ref_t mountpoint = vnode_dereference_mountpoint(parent, mountpoint);
+    // if (!mountpoint.ptr) return EPERM;
     struct stat st;
     st.st_mode = access | S_IFDIR;
     st.st_blocks = 0;
@@ -671,11 +693,5 @@ int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gi
     st.st_atim = (struct timespec){ 0, 0 };
     st.st_ctim = (struct timespec){ 0, 0 };
     st.st_mtim = (struct timespec){ 0, 0 };
-    uint32_t flags;
-    if (mountpoint->dev_node.ptr)
-        flags = acquire_spinlock_noint(&mountpoint->dev_node.ptr->lock);
-    int ret = vfs_add_new_child_node(parent, name, &st, mountpoint->create_inode ? mountpoint->create_inode(name, parent, &st) : NULL, mountpoint->free_inode);
-    if (mountpoint->dev_node.ptr)
-        release_spinlock_noint(&mountpoint->dev_node.ptr->lock, flags);
-    return ret;
+    return vfs_add_new_child_node(parent, name, &st, NULL, NULL);
 }
