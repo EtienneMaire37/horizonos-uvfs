@@ -1,6 +1,9 @@
 #include "virtual.h"
 #include "../inode.h"
+#include "../mountpoint.h"
+#include "../log.h"
 #include <errno.h>
+#include <limits.h>
 
 ino_t virtfs_generate_ino()
 {
@@ -10,9 +13,22 @@ ino_t virtfs_generate_ino()
 
 int virtfs_explore(vnode_ref_t vnode)
 {
-    (void)vnode;
+    char path[PATH_MAX];
+    vfs_get_relative_path_to_node_from_mountpoint(vnode, path, sizeof(path));
+    LOG(DEBUG, "virtfs_explore: \"%s\"", path);
+    int _errno;
+    vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ vnode.ptr->mountpoint.ptr->data }, (vnode_ref_t){ NULL }, false);
+    if (!node.ptr) return _errno;
+    vnode_move_reference(&node, children);
+    while (node.ptr)
+    {
+        vfs_add_new_child_node__hardlink(vnode, node.ptr->name, node.ptr->inode);
+        vnode_move_reference(&node, next);
+    }
+    
     return 0;
 }
+
 ssize_t virtfs_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {
     (void)vnode;

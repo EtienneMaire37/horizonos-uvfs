@@ -128,8 +128,8 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
     *ref = new_ref;
 }
 
-#define vadncne_ret(err) { if (free_fs_specific_data && fs_specific) free_fs_specific_data(fs_specific); return (err); }
-int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st,
+#define vadncne_ret(err) { if (free_fs_specific_data && !_inode.ptr) free_fs_specific_data(fs_specific); return (err); }
+int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t _inode, struct stat st,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*))
 {
@@ -145,15 +145,20 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
     st.st_ino = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->generate_ino() : 0;
     release_spinlock_noint(&node.ptr->lock, flags);
 
-    inode_ref_t inode = vfs_create_new_inode(&st, fs_specific, free_fs_specific_data);
-    vnode_ref_t child = vfs_create_new_vnode(name, inode);
+    inode_ref_t inode = _inode.ptr ? (inode_ref_t){ NULL } : vfs_create_new_inode(&st, fs_specific, free_fs_specific_data);
+    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : _inode);
     inode_delete_ref(&inode);
+    // * From this point on if we free correctly the "child" vnode fs_specific is cleaned up automatically
+    // * That means we MUST NOT free it manually as it would cause a double free
+
+    // undef it just in case
+#undef vadncne_ret
 
     if (!child.ptr)
     {
         LOG(WARN, "vfs_add_new_child_node: Couldn't allocate child");
         vnode_delete_ref(&child);
-        vadncne_ret(ENOMEM);
+        return ENOMEM;
     }
 
     child.ptr->mountpoint = vnode_dereference_mountpoint(node, mountpoint);
@@ -176,7 +181,7 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
             vnode_delete_ref(&test_ref);
             vnode_delete_ref(&child);
             vnode_delete_ref(&ref);
-            vadncne_ret(EEXIST);
+            return EEXIST;
         }
         vnode_move_reference(&test_ref, next);
     }
@@ -195,14 +200,18 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st
 }
 int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*))
 {
-    return vfs_add_new_child_node_ex(node, name, *st, NULL, NULL, fs_specific, free_fs_specific_data);
+    return vfs_add_new_child_node_ex(node, name, (inode_ref_t){ NULL }, *st, NULL, NULL, fs_specific, free_fs_specific_data);
+}
+int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode)
+{
+    return vfs_add_new_child_node_ex(node, name, inode, (struct stat){}, NULL, NULL, NULL, NULL);
 }
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*))
 {
     assert(S_ISBLK(mode) || S_ISCHR(mode));
-    return vfs_add_new_child_node_ex(node, name, (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, read, write, fs_specific, free_fs_specific_data);
+    return vfs_add_new_child_node_ex(node, name, (inode_ref_t){ NULL }, (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, read, write, fs_specific, free_fs_specific_data);
 }
 
 bool vnode_is_mountpoint_locked(vnode_ref_t node)
@@ -215,7 +224,11 @@ bool vnode_is_mountpoint_locked(vnode_ref_t node)
 
 void _vfs_unload_children(vnode_ref_t node, bool locked)
 {
-    assert(node.ptr);
+    if (!node.ptr)
+    {
+        LOG(WARN, "_vfs_unload_children: Tried to unload a null vnode");
+        return;
+    }
 
     uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
     vnode_ref_t child = vnode_dereference_vnode_locked(node, children);
@@ -364,7 +377,7 @@ size_t vfs_get_absolute_path_to_node(vnode_ref_t ref, char* buf, size_t bufsiz)
     if (node->parent)
         buf[(ret = vfs_get_absolute_path_to_node_helper(ref, buf, bufsiz - 1) + 1)] = 0;
     else
-        strcpy(buf, (ret = 2, "/"));
+        strcpy(buf, (ret = 1, "/"));
     return ret;
 }
 
@@ -399,7 +412,7 @@ size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf,
     size_t ret;
     // Can return invalid paths on a file which was on an unmounted mountpoint,
     // as its parents can be unloaded before it.
-    // should'n cause any real problems though (?)
+    // shouldn't cause any real problems though (?)
     // TODO: Handle this cleanly
     if (node->parent)
     {
@@ -407,8 +420,10 @@ size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf,
         buf[(ret = vfs_get_relative_path_to_node_from_mountpoint_helper(start_ref, ref, buf, bufsiz - 1) + 1)] = 0;
         vnode_delete_ref(&start_ref);
     }
+    else if (node->mountpoint.ptr->root.ptr == vfs_root_node.ptr)
+        strcpy(buf, (ret = 0, ""));
     else
-        strcpy(buf, (ret = 2, "/"));
+        strcpy(buf, (ret = 1, "/"));
     return ret;
 }
 
@@ -570,12 +585,18 @@ vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const cha
                 child = vfs_get_vnode_from_path(_errno, uid, gid, _path, root, _child, follow_symlinks);
                 vnode_delete_ref(&_child);
             }
+            if (!child.ptr)
+            {
+                vnode_delete_ref(&ecwd);
+                vnode_delete_ref(&current);
+                *_errno = ENOENT;
+                return (vnode_ref_t){ NULL };
+                
+            }
             if (!*path)
             {
                 vnode_delete_ref(&ecwd);
                 vnode_delete_ref(&current);
-                if (!child.ptr)
-                    *_errno = ENOENT;
                 return child;
             }
             bool x = (uid == child.ptr->inode.ptr->st.st_uid) ? (child.ptr->inode.ptr->st.st_mode & S_IXUSR) :

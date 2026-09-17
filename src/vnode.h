@@ -56,12 +56,13 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset);
 void ___vnode_free(const struct ref* ref);
 vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode);
 int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*));
-int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, struct stat st,
+int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t inode, struct stat st,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*));
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*));
+int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode);
 void vfs_unload_children(vnode_ref_t node);
 #define vfs_unload_children(node) _vfs_unload_children((node), false);
 #define vfs_unload_children_locked(node) _vfs_unload_children((node), true);
