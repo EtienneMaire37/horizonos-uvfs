@@ -128,10 +128,8 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
     *ref = new_ref;
 }
 
-#define vadncne_ret(err) { if (free_fs_specific_data && !_inode.ptr) free_fs_specific_data(fs_specific); return (err); }
-int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t _inode, struct stat st,
-    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
-    void* fs_specific, void (*free_fs_specific_data)(void*))
+#define vadncne_ret(err) { if (params.free_fs_specific_data && !params.inode.ptr) params.free_fs_specific_data(params.fs_specific); return (err); }
+int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_child_node_ex_params_t params)
 {
     assert(node.ptr);
 
@@ -140,18 +138,18 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t _i
     if (!*name) vadncne_ret(EINVAL);
 
     uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
-    st.st_blksize = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->blksize : 4096;
-    st.st_dev = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->dev : (dev_t)-1;
-    st.st_ino = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->generate_ino() : 0;
+    params.st.st_blksize = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->blksize : 4096;
+    params.st.st_dev = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->dev : (dev_t)-1;
+    params.st.st_ino = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->generate_ino() : 0;
     release_spinlock_noint(&node.ptr->lock, flags);
 
-    inode_ref_t inode = _inode.ptr ? (inode_ref_t){ NULL } : vfs_create_new_inode(&st, fs_specific, free_fs_specific_data);
-    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : _inode);
+    inode_ref_t inode = params.inode.ptr ? (inode_ref_t){ NULL } : vfs_create_new_inode(&params.st, params.fs_specific, params.free_fs_specific_data);
+    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : params.inode);
     inode_delete_ref(&inode);
     // * From this point on if we free correctly the "child" vnode fs_specific is cleaned up automatically
     // * That means we MUST NOT free it manually as it would cause a double free
 
-    // undef it just in case
+    // NOTE: undef it just in case
 #undef vadncne_ret
 
     if (!child.ptr)
@@ -162,8 +160,8 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t _i
     }
 
     child.ptr->mountpoint = vnode_dereference_mountpoint(node, mountpoint);
-    child.ptr->read = read ? read : child.ptr->mountpoint.ptr->read;
-    child.ptr->write = write ? write : child.ptr->mountpoint.ptr->write;
+    child.ptr->read = params.read ? params.read : child.ptr->mountpoint.ptr->read;
+    child.ptr->write = params.write ? params.write : child.ptr->mountpoint.ptr->write;
 
     uint32_t node_flags = node.ptr->flags;
     if (!(node_flags & VNODE_EXPLORED) && !(node_flags & VNODE_EXPLORING))
@@ -200,18 +198,18 @@ int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t _i
 }
 int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*))
 {
-    return vfs_add_new_child_node_ex(node, name, (inode_ref_t){ NULL }, *st, NULL, NULL, fs_specific, free_fs_specific_data);
+    return vfs_add_new_child_node_ex(node, name, .inode = (inode_ref_t){ NULL }, .st = *st, .fs_specific = fs_specific, .free_fs_specific_data = free_fs_specific_data);
 }
 int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode)
 {
-    return vfs_add_new_child_node_ex(node, name, inode, (struct stat){}, NULL, NULL, NULL, NULL);
+    return vfs_add_new_child_node_ex(node, name, .inode = inode, .st = (struct stat){});
 }
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*))
 {
     assert(S_ISBLK(mode) || S_ISCHR(mode));
-    return vfs_add_new_child_node_ex(node, name, (inode_ref_t){ NULL }, (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, read, write, fs_specific, free_fs_specific_data);
+    return vfs_add_new_child_node_ex(node, name, .inode = (inode_ref_t){ NULL }, .st = (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, .read = read, .write = write, .fs_specific = fs_specific, .free_fs_specific_data = free_fs_specific_data);
 }
 
 bool vnode_is_mountpoint_locked(vnode_ref_t node)
@@ -410,7 +408,7 @@ size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf,
     assert(buf);
     assert(node);
     size_t ret;
-    // Can return invalid paths on a file which was on an unmounted mountpoint,
+    // BUG: Can return invalid paths on a file which was on an unmounted mountpoint,
     // as its parents can be unloaded before it.
     // shouldn't cause any real problems though (?)
     // TODO: Handle this cleanly
@@ -714,5 +712,6 @@ int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gi
     st.st_atim = (struct timespec){ 0, 0 };
     st.st_ctim = (struct timespec){ 0, 0 };
     st.st_mtim = (struct timespec){ 0, 0 };
-    return vfs_add_new_child_node(parent, name, &st, NULL, NULL);
+    // TODO: Call mountpoint to actually mkdir
+    return vfs_add_new_child_node_ex(parent, name, (inode_ref_t){ NULL }, st);
 }

@@ -45,6 +45,18 @@ struct vnode
 extern vnode_ref_t vfs_root_node;
 extern _Atomic  size_t vfs_total_nodes;
 
+typedef struct
+{
+    inode_ref_t inode;
+    struct stat st;
+    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t);
+    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t);
+    void* fs_specific;
+    void (*free_fs_specific_data)(void*);
+} vfs_add_new_child_node_ex_params_t;
+#define vfs_add_new_child_node_ex(node, name, ...) _vfs_add_new_child_node_ex(node, name, (vfs_add_new_child_node_ex_params_t){ \
+            __VA_ARGS__ })
+
 void vfs_create_root_node();
 
 vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset, bool locked);
@@ -56,9 +68,7 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset);
 void ___vnode_free(const struct ref* ref);
 vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode);
 int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*));
-int vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, inode_ref_t inode, struct stat st,
-    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
-    void* fs_specific, void (*free_fs_specific_data)(void*));
+int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_child_node_ex_params_t params);
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*));
