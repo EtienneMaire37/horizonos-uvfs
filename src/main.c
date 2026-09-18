@@ -1,6 +1,5 @@
 #include <linux/limits.h>
 #include <sys/stat.h>
-#include <assert.h>
 
 #include "vnode.h"
 #include "inode.h"
@@ -8,6 +7,7 @@
 #include "explore.h"
 #include "fs/initrd.h"
 #include "fs/null.h"
+#include "util/assert.h"
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -34,7 +34,7 @@ static inline char* get_input(char* buf, size_t bytes)
 
 int main()
 {
-    assert(sizeof(vnode_ref_t) == sizeof(uintptr_t));
+    ASSERT(sizeof(vnode_ref_t) == sizeof(uintptr_t));
     initrd_init("./resources/initrd.tar");
     vfs_create_root_node();
     LOG(DEBUG, "Mounting initrd at root");

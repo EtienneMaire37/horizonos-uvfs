@@ -1,9 +1,9 @@
 #include "initrd.h"
 #include "../inode.h"
 #include "../util/string.h"
+#include "../util/assert.h"
 #include "../log.h"
 #include <limits.h>
-#include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -128,8 +128,8 @@ ssize_t initrd_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 void initrd_init(const char* path)
 {
     int fd = open(path, O_RDONLY);
-    assert(fd != -1);
-    assert(sizeof(ustar_header_t) == 512);
+    ASSERT(fd != -1);
+    ASSERT(sizeof(ustar_header_t) == 512);
     ustar_header_t header;
     while (read(fd, &header, 512) == 512)
     {

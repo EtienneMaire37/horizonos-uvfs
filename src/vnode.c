@@ -13,10 +13,10 @@
 #include "fs/initrd.h"
 #include "rdev.h"
 #include "vnode_ref.h"
+#include "util/assert.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <limits.h>
@@ -55,7 +55,7 @@ void vfs_create_root_node()
 
 vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
 {
-    assert(name && inode.ptr);
+    ASSERT(name && inode.ptr);
     vnode_t* newn = calloc(1, sizeof(vnode_t));
     if (!newn) return (vnode_ref_t){ NULL };
     newn->name = strdup(name);
@@ -87,7 +87,7 @@ void vnode_delete_ref(vnode_ref_t* ref)
 
 vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset, bool locked)
 {
-    assert(node.ptr);
+    ASSERT(node.ptr);
     uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
     vnode_t* field_value = *(vnode_t**)((uintptr_t)node.ptr + field_offset);
     if (field_value)
@@ -99,7 +99,7 @@ vnode_ref_t ___vnode_dereference_vnode(vnode_ref_t node, size_t field_offset, bo
 
 inode_ref_t ___vnode_dereference_inode(vnode_ref_t node, size_t field_offset)
 {
-    assert(node.ptr);
+    ASSERT(node.ptr);
     uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
     inode_t* field_value = *(inode_t**)((uintptr_t)node.ptr + field_offset);
     if (field_value)
@@ -110,7 +110,7 @@ inode_ref_t ___vnode_dereference_inode(vnode_ref_t node, size_t field_offset)
 
 mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_offset, bool locked)
 {
-    assert(node.ptr);
+    ASSERT(node.ptr);
     uint32_t flags = locked ? 0 : acquire_spinlock_noint(&node.ptr->lock);
     mountpoint_t* field_value = *(mountpoint_t**)((uintptr_t)node.ptr + field_offset);
     if (field_value)
@@ -122,7 +122,7 @@ mountpoint_ref_t ___vnode_dereference_mountpoint(vnode_ref_t node, size_t field_
 
 void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
 {
-    assert(ref && ref->ptr);
+    ASSERT(ref && ref->ptr);
     vnode_ref_t new_ref = ___vnode_dereference_vnode(*ref, field_offset, false);
     vnode_delete_ref(ref);
     *ref = new_ref;
@@ -131,7 +131,7 @@ void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset)
 #define vadncne_ret(err) { if (params.free_fs_specific_data && !params.inode.ptr) params.free_fs_specific_data(params.fs_specific); return (err); }
 int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_child_node_ex_params_t params)
 {
-    assert(node.ptr);
+    ASSERT(node.ptr);
 
     if (!S_ISDIR(node.ptr->inode.ptr->st.st_mode)) vadncne_ret(ENOTDIR);
     if (strchr(name, '/')) vadncne_ret(EINVAL);
@@ -208,7 +208,7 @@ int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mo
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*))
 {
-    assert(S_ISBLK(mode) || S_ISCHR(mode));
+    ASSERT(S_ISBLK(mode) || S_ISCHR(mode));
     return vfs_add_new_child_node_ex(node, name, .inode = (inode_ref_t){ NULL }, .st = (struct stat){.st_dev = 0, .st_mode = mode, .st_uid = uid, .st_gid = gid, .st_rdev = vfs_generate_rdev(), .st_size = 0, .st_blocks = 0, .st_atim = {0, 0}, .st_mtim = {0, 0}, .st_ctim = {0, 0}}, .read = read, .write = write, .fs_specific = fs_specific, .free_fs_specific_data = free_fs_specific_data);
 }
 
@@ -261,7 +261,7 @@ void _vfs_unload_children(vnode_ref_t node, bool locked)
 
 void vfs_unparent_children(vnode_ref_t node)
 {
-    assert(node.ptr);
+    ASSERT(node.ptr);
 
     vnode_ref_t child = vnode_dereference_vnode(node, children);
     while (child.ptr)
@@ -273,7 +273,7 @@ void vfs_unparent_children(vnode_ref_t node)
 
 int vfs_unmount(vnode_ref_t ref)
 {
-    assert(ref.ptr);
+    ASSERT(ref.ptr);
     uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
     if (ref.ptr->mountpoint.ptr->root.ptr != ref.ptr)
     {
@@ -322,7 +322,7 @@ void ___vnode_free(const struct ref* _ref)
 
 void vfs_log_structure_helper(vnode_ref_t node, int depth)
 {
-    assert(node.ptr);
+    ASSERT(node.ptr);
 
     LOG(DEBUG, "%*s- \"%s\" (inode %ld) [%d hardlinks] [%d references]%s%s", depth, "",
         node.ptr->name, (long)node.ptr->inode.ptr->st.st_ino,
@@ -347,7 +347,7 @@ void vfs_log_structure(vnode_ref_t node)
 size_t vfs_get_absolute_path_to_node_helper(vnode_ref_t ref, char* buf, size_t bufsiz)
 {
     vnode_t* node = ref.ptr;
-    assert(node);
+    ASSERT(node);
     LOG(TRACE, "vfs_get_absolute_path_to_node_helper: %s", node->name);
     size_t offset = 0;
     vnode_ref_t parent_ref = vnode_dereference_vnode(ref, parent);
@@ -368,9 +368,9 @@ size_t vfs_get_absolute_path_to_node_helper(vnode_ref_t ref, char* buf, size_t b
 size_t vfs_get_absolute_path_to_node(vnode_ref_t ref, char* buf, size_t bufsiz)
 {
     vnode_t* node = ref.ptr;
-    assert(bufsiz > 2);
-    assert(buf);
-    assert(node);
+    ASSERT(bufsiz > 2);
+    ASSERT(buf);
+    ASSERT(node);
     size_t ret;
     if (node->parent)
         buf[(ret = vfs_get_absolute_path_to_node_helper(ref, buf, bufsiz - 1) + 1)] = 0;
@@ -382,7 +382,7 @@ size_t vfs_get_absolute_path_to_node(vnode_ref_t ref, char* buf, size_t bufsiz)
 size_t vfs_get_relative_path_to_node_from_mountpoint_helper(vnode_ref_t start_node, vnode_ref_t ref, char* buf, size_t bufsiz)
 {
     vnode_t* node = ref.ptr;
-    assert(node);
+    ASSERT(node);
     LOG(TRACE, "vfs_get_relative_path_to_node_from_mountpoint_helper: %s", node->name);
     size_t offset = 0;
     vnode_ref_t parent_ref = vnode_dereference_vnode(ref, parent);
@@ -404,9 +404,9 @@ size_t vfs_get_relative_path_to_node_from_mountpoint_helper(vnode_ref_t start_no
 size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf, size_t bufsiz)
 {
     vnode_t* node = ref.ptr;
-    assert(bufsiz > 2);
-    assert(buf);
-    assert(node);
+    ASSERT(bufsiz > 2);
+    ASSERT(buf);
+    ASSERT(node);
     size_t ret;
     // BUG: Can return invalid paths on a file which was on an unmounted mountpoint,
     // as its parents can be unloaded before it.
@@ -428,7 +428,7 @@ size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf,
 size_t vfs_count_nodes(vnode_ref_t ref)
 {
     vnode_t* node = ref.ptr;
-    assert(node);
+    ASSERT(node);
     size_t total = 0;
     vnode_ref_t child = vnode_dereference_vnode(ref, children);
     while (child.ptr)
@@ -462,8 +462,8 @@ vnode_ref_t vnode_copy_ref(vnode_ref_t ref)
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t root, vnode_ref_t cwd, bool follow_symlinks)
 {
     // TODO: Cache path --> vnode in a hashmap (and then iterate on successive parents for permissions)
-    assert(_errno);
-    assert(path);
+    ASSERT(_errno);
+    ASSERT(path);
     if (!root.ptr) root = vfs_root_node;
     LOG(TRACE, "Searching for vnode with path \"%s\"", path);
     *_errno = 0;
@@ -631,7 +631,7 @@ ssize_t vnode_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     if (!node) return -ENOENT;
-    assert(node->read);
+    ASSERT(node->read);
     return node->read(ref, buf, bytes, offset);
 }
 
@@ -639,7 +639,7 @@ ssize_t vnode_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     if (!node) return -ENOENT;
-    assert(node->write);
+    ASSERT(node->write);
     return node->write(ref, buf, bytes, offset);
 }
 

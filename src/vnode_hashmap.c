@@ -1,7 +1,7 @@
 #include "vnode_hashmap.h"
 #include "util/hash.h"
+#include "util/assert.h"
 #include <stdlib.h>
-#include <assert.h>
 #include <string.h>
 
 vnode_hashmap_t* vnode_hashmap_create(size_t mem_limit)
@@ -21,7 +21,7 @@ vnode_hashmap_t* vnode_hashmap_create(size_t mem_limit)
 
 void vnode_hashmap_destroy(vnode_hashmap_t** hmap)
 {
-    assert(hmap);
+    ASSERT(hmap);
     if (!*hmap) return;
     for (size_t i = 0; i < (*hmap)->entries; i++)
     {
@@ -40,7 +40,7 @@ void vnode_hashmap_destroy(vnode_hashmap_t** hmap)
 
 vnode_t* vnode_hashmap_put(vnode_hashmap_t* hmap, const char* key, vnode_t* node)
 {
-    assert(hmap);
+    ASSERT(hmap);
     vnode_ll_item_t* it = malloc(sizeof(*it));
     if (!it) return NULL;
     uint32_t flags = acquire_spinlock_noint(&hmap->lock);
@@ -55,7 +55,7 @@ vnode_t* vnode_hashmap_put(vnode_hashmap_t* hmap, const char* key, vnode_t* node
 
 vnode_t* vnode_hashmap_set(vnode_hashmap_t* hmap, const char* key, vnode_t* node)
 {
-    assert(hmap);
+    ASSERT(hmap);
     uint32_t flags = acquire_spinlock_noint(&hmap->lock);
     uint64_t idx = hash_string(key) % hmap->entries;
     vnode_ll_item_t* val = hmap->data[idx];
@@ -86,7 +86,7 @@ vnode_t* vnode_hashmap_set(vnode_hashmap_t* hmap, const char* key, vnode_t* node
 
 vnode_t* vnode_hashmap_get(vnode_hashmap_t* hmap, const char* key)
 {
-    assert(hmap);
+    ASSERT(hmap);
     uint32_t flags = acquire_spinlock_noint(&hmap->lock);
     uint64_t idx = hash_string(key) % hmap->entries;
     vnode_ll_item_t* val = hmap->data[idx];
@@ -106,7 +106,7 @@ vnode_t* vnode_hashmap_get(vnode_hashmap_t* hmap, const char* key)
 
 void vnode_hashmap_del(vnode_hashmap_t* hmap, const char* key)
 {
-    assert(hmap);
+    ASSERT(hmap);
     uint32_t flags = acquire_spinlock_noint(&hmap->lock);
     uint64_t idx = hash_string(key) % hmap->entries;
     vnode_ll_item_t* val = hmap->data[idx];

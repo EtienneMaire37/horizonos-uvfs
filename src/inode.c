@@ -1,11 +1,11 @@
 #include "inode.h"
 #include "ref.h"
 #include <stdlib.h>
-#include <assert.h>
+#include "util/assert.h"
 
 inode_ref_t vfs_create_new_inode(const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*))
 {
-    assert(st);
+    ASSERT(st);
     inode_t* newn = calloc(1, sizeof(inode_t));
     if (!newn) return (inode_ref_t){ NULL };
     newn->st = *st;

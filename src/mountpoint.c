@@ -3,12 +3,12 @@
 #include "ref.h"
 #include "vnode.h"
 #include "log.h"
+#include "util/assert.h"
 #include <stdlib.h>
-#include <assert.h>
 
 void mountpoint_delete_ref(mountpoint_ref_t* ref)
 {
-    assert(ref);
+    ASSERT(ref);
     struct ref* ref_ref = ref->ptr ? &ref->ptr->ref : NULL;
     ref->ptr = NULL;
     if (ref_ref)
