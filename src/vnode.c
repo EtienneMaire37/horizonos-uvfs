@@ -672,6 +672,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         mountpoint->explore = virtfs_explore;
         mountpoint->read = virtfs_read;
         mountpoint->write = virtfs_write;
+        mountpoint->mkdir = virtfs_mkdir;
         mountpoint->flush = virtfs_flush;
         mountpoint->data = NULL;
         mountpoint->free_data = virtfs_free_data;
@@ -681,6 +682,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         mountpoint->explore = initrd_explore;
         mountpoint->read = initrd_read;
         mountpoint->write = initrd_write;
+        mountpoint->mkdir = initrd_mkdir;
         break;
 
     default:
@@ -697,11 +699,10 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     return 0;
 }
 
-// TODO: Add corresponding functions in mountpoints and make virtual file systems stay on unload
 int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gid_t gid)
 {
-    // mountpoint_ref_t mountpoint = vnode_dereference_mountpoint(parent, mountpoint);
-    // if (!mountpoint.ptr) return EPERM;
+    mountpoint_ref_t mountpoint = vnode_dereference_mountpoint(parent, mountpoint);
+    if (!mountpoint.ptr) return EPERM;
     struct stat st;
     st.st_mode = access | S_IFDIR;
     st.st_blocks = 0;
@@ -709,9 +710,13 @@ int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gi
     st.st_uid = uid;
     st.st_gid = gid;
     st.st_size = 0;
+    // TODO: Actually set the time
     st.st_atim = (struct timespec){ 0, 0 };
     st.st_ctim = (struct timespec){ 0, 0 };
     st.st_mtim = (struct timespec){ 0, 0 };
-    // TODO: Call mountpoint to actually mkdir
+    int ret = ENOSYS;
+    if (mountpoint.ptr->mkdir) ret = mountpoint.ptr->mkdir(name, parent, &st);
+    mountpoint_delete_ref(&mountpoint);
+    if (ret) return ret;
     return vfs_add_new_child_node_ex(parent, name, (inode_ref_t){ NULL }, st);
 }

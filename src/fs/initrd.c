@@ -192,3 +192,11 @@ void initrd_init(const char* path)
     }
     close(fd);
 }
+
+int initrd_mkdir(const char* name, vnode_ref_t parent, struct stat* st)
+{
+    (void)name;
+    (void)parent;
+    (void)st;
+    return EROFS;
+}

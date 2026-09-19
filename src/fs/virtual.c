@@ -45,6 +45,15 @@ ssize_t virtfs_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
     (void)offset;
     return -ENOSYS;
 }
+int virtfs_mkdir(const char* name, vnode_ref_t parent, struct stat* st)
+{
+    // TODO: Create new vnode in tree
+    (void)name;
+    (void)parent;
+    (void)st;
+    return 0;
+}
+
 
 void virtfs_flush(vnode_ref_t vnode)
 {

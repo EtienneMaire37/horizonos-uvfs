@@ -21,8 +21,9 @@ struct mountpoint
 
     int (*explore)(vnode_ref_t); 
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 
-    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t); 
-    // TODO: Add more operations like file/folder creation/deletion
+    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t);
+    int (*mkdir)(const char*, vnode_ref_t, struct stat*);
+    // TODO: Add more operations
     void (*flush)(vnode_ref_t);
 
     void* data;
