@@ -47,13 +47,13 @@ void vfs_create_root_node()
     st.st_size = 0;
 
     inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL);
-    vfs_root_node = vfs_create_new_vnode("/", inode);
+    vfs_root_node = vfs_create_new_vnode("/", inode, false);
     inode_delete_ref(&inode);
 
     LOG(DEBUG, "Done");
 }
 
-vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
+vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode, bool dont_count_hardlink)
 {
     ASSERT(name && inode.ptr);
     vnode_t* newn = calloc(1, sizeof(vnode_t));
@@ -66,12 +66,12 @@ vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
     }
     vfs_total_nodes++;
     newn->inode = inode_copy_ref(inode);
-    uint32_t flags = acquire_spinlock_noint(&newn->inode.ptr->lock);
-    newn->inode.ptr->st.st_nlink++;
-    release_spinlock_noint(&newn->inode.ptr->lock, flags);
+    if (!dont_count_hardlink)
+        __sync_fetch_and_add(&newn->inode.ptr->st.st_nlink, 1);
     newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
     newn->flags = VNODE_INIT;
     newn->ref = VNODE_REF_INIT;
+    newn->dont_count_hardlink = dont_count_hardlink;
     return (vnode_ref_t){ newn };
 }
 
@@ -139,11 +139,11 @@ int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_c
     uint32_t flags = acquire_spinlock_noint(&node.ptr->lock);
     params.st.st_blksize = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->blksize : 4096;
     params.st.st_dev = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->dev : (dev_t)-1;
-    params.st.st_ino = node.ptr->mountpoint.ptr ? node.ptr->mountpoint.ptr->generate_ino() : 0;
+    params.st.st_ino = params.st.st_ino;
     release_spinlock_noint(&node.ptr->lock, flags);
 
     inode_ref_t inode = params.inode.ptr ? (inode_ref_t){ NULL } : vfs_create_new_inode(&params.st, params.fs_specific, params.free_fs_specific_data);
-    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : params.inode);
+    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : params.inode, params.dont_count_hardlink);
     inode_delete_ref(&inode);
     // * From this point on if we free correctly the "child" vnode fs_specific is cleaned up automatically
     // * That means we MUST NOT free it manually as it would cause a double free
@@ -157,15 +157,14 @@ int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_c
         vnode_delete_ref(&child);
         return ENOMEM;
     }
+    child.ptr->flags = params.explored ? VNODE_EXPLORED : VNODE_INIT;
 
     child.ptr->mountpoint = vnode_dereference_mountpoint(node, mountpoint);
     bool mp = child.ptr->mountpoint.ptr;
     child.ptr->read = params.read ? params.read : mp ? child.ptr->mountpoint.ptr->read : NULL;
     child.ptr->write = params.write ? params.write : mp ? child.ptr->mountpoint.ptr->write : NULL;
 
-    uint32_t node_flags = node.ptr->flags;
-    if (!(node_flags & VNODE_EXPLORED) && !(node_flags & VNODE_EXPLORING))
-        vfs_explore(node);
+    vfs_explore(node);
 
     vnode_ref_t ref = vnode_dereference_vnode(node, children);
     flags = acquire_spinlock_noint(&node.ptr->lock);
@@ -198,9 +197,9 @@ int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat
 {
     return vfs_add_new_child_node_ex(node, name, .inode = (inode_ref_t){ NULL }, .st = *st, .fs_specific = fs_specific, .free_fs_specific_data = free_fs_specific_data);
 }
-int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode)
+int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode, bool count_hardlink)
 {
-    return vfs_add_new_child_node_ex(node, name, .inode = inode, .st = (struct stat){});
+    return vfs_add_new_child_node_ex(node, name, .inode = inode, .st = (struct stat){}, .dont_count_hardlink = !count_hardlink);
 }
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
@@ -308,9 +307,7 @@ void ___vnode_free(const struct ref* _ref)
     vfs_unparent_children(ref);
     vfs_unload_children(ref);
 
-    uint32_t flags = acquire_spinlock_noint(&node->inode.ptr->lock);
-    node->inode.ptr->st.st_nlink--;
-    release_spinlock_noint(&node->inode.ptr->lock, flags);
+    if (!node->dont_count_hardlink) __sync_fetch_and_sub(&node->inode.ptr->st.st_nlink, 1);
     inode_delete_ref(&node->inode);
     mountpoint_delete_ref(&node->mountpoint);
     free(node->name);
@@ -671,7 +668,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         mountpoint->explore = virtfs_explore;
         mountpoint->read = virtfs_read;
         mountpoint->write = virtfs_write;
-        mountpoint->mkdir = virtfs_mkdir;
+        mountpoint->create = virtfs_create;
         mountpoint->flush = virtfs_flush;
         mountpoint->data = virtfs_create_data();
         mountpoint->free_data = virtfs_free_data;
@@ -681,7 +678,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
         mountpoint->explore = initrd_explore;
         mountpoint->read = initrd_read;
         mountpoint->write = initrd_write;
-        mountpoint->mkdir = initrd_mkdir;
+        mountpoint->create = initrd_create;
         break;
 
     default:
@@ -698,24 +695,27 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     return 0;
 }
 
-int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gid_t gid)
+int _vfs_create(const char* name, vnode_ref_t parent, mode_t mode, uid_t uid, gid_t gid, vfs_create_params_t params)
 {
     mountpoint_ref_t mountpoint = vnode_dereference_mountpoint(parent, mountpoint);
     if (!mountpoint.ptr) return EPERM;
+    vfs_explore(parent);
     struct stat st;
-    st.st_mode = access | S_IFDIR;
-    st.st_blocks = 0;
-    st.st_rdev = 0;
+    st.st_mode = mode;
+    st.st_rdev = (S_ISCHR(mode) || S_ISBLK(mode)) ? vfs_generate_rdev() : 0;
     st.st_uid = uid;
     st.st_gid = gid;
-    st.st_size = 0;
+    st.st_size = params.size;
+    st.st_blocks = (st.st_size + 511) / 512;
     // TODO: Actually set the time
     st.st_atim = (struct timespec){ 0, 0 };
     st.st_ctim = (struct timespec){ 0, 0 };
     st.st_mtim = (struct timespec){ 0, 0 };
     int ret = ENOSYS;
-    if (mountpoint.ptr->mkdir) ret = mountpoint.ptr->mkdir(name, parent, &st);
+    void* fs_specific = NULL;
+    void (*free_fs_specific_data)(void*) = NULL;
+    if (mountpoint.ptr->create) ret = mountpoint.ptr->create(name, parent, &st, &fs_specific, &free_fs_specific_data);
     mountpoint_delete_ref(&mountpoint);
     if (ret) return ret;
-    return vfs_add_new_child_node_ex(parent, name, (inode_ref_t){ NULL }, st);
+    return vfs_add_new_child_node_ex(parent, name, (inode_ref_t){ NULL }, st, .fs_specific = fs_specific, .free_fs_specific_data = free_fs_specific_data, .explored = true);
 }

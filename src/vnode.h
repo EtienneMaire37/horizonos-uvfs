@@ -31,6 +31,8 @@ struct vnode
 
     ssize_t (*_Atomic read)(vnode_ref_t, void*, size_t, off_t); 
     ssize_t (*_Atomic write)(vnode_ref_t, void*, size_t, off_t);
+
+    bool dont_count_hardlink;
 };
 
 #define vnode_dereference_vnode(vnode, field)       ___vnode_dereference_vnode((vnode), offsetof(vnode_t, field), false)
@@ -53,9 +55,22 @@ typedef struct
     ssize_t (*write)(vnode_ref_t, void*, size_t, off_t);
     void* fs_specific;
     void (*free_fs_specific_data)(void*);
+    bool explored;
+    bool dont_count_hardlink;
+    // Add here
 } vfs_add_new_child_node_ex_params_t;
 #define vfs_add_new_child_node_ex(node, name, ...) _vfs_add_new_child_node_ex(node, name, (vfs_add_new_child_node_ex_params_t){ \
             __VA_ARGS__ })
+
+typedef struct
+{
+    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t);
+    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t);
+    size_t size; // For block special files
+    // Add here
+} vfs_create_params_t;
+#define vfs_create(name, parent, mode, uid, gid, ...) _vfs_create(name, parent, mode, uid, gid, (vfs_create_params_t){ __VA_ARGS__ })
+int _vfs_create(const char* name, vnode_ref_t parent, mode_t mode, uid_t uid, gid_t gid, vfs_create_params_t params);
 
 void vfs_create_root_node();
 
@@ -66,13 +81,13 @@ void vnode_delete_ref(vnode_ref_t* ref);
 void ___vnode_move_reference(vnode_ref_t* ref, size_t field_offset);
 
 void ___vnode_free(const struct ref* ref);
-vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode);
+vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode, bool dont_count_hardlink);
 int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat* st, void* fs_specific, void (*free_fs_specific_data)(void*));
 int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_child_node_ex_params_t params);
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
     void* fs_specific, void (*free_fs_specific_data)(void*));
-int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode);
+int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode, bool count_hardlink);
 void vfs_unload_children(vnode_ref_t node);
 #define vfs_unload_children(node) _vfs_unload_children((node), false);
 #define vfs_unload_children_locked(node) _vfs_unload_children((node), true);
@@ -90,4 +105,3 @@ ssize_t vnode_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
 ssize_t vnode_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
 
 int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype);
-int vfs_mkdir(const char* name, vnode_ref_t parent, mode_t access, uid_t uid, gid_t gid);

@@ -26,7 +26,8 @@ int vfs_explore(vnode_ref_t ref)
 
     int ret = ENOSYS; 
     if (!node->mountpoint.ptr)
-        LOG(WARN, "NULL mountpoint");
+    // NOTE: Don't log anything because it is a normal occurence with virtfs mountpoints
+        ; // LOG(WARN, "NULL mountpoint");
     else
     {
         int (*explore)(vnode_ref_t) = node->mountpoint.ptr->explore;

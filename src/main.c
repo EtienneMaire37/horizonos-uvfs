@@ -42,7 +42,7 @@ int main()
     if (errno)
         perror("Couldn't mount root");
     LOG(DEBUG, "Creating /dev");
-    errno = vfs_mkdir("dev", vfs_root_node, 0755, 0, 0);
+    errno = vfs_create("dev", vfs_root_node, 0755 | S_IFDIR, 0, 0);
     LOG(TRACE, "Done");
     if (errno)
         perror("Couldn't create /dev");
@@ -54,14 +54,14 @@ int main()
             abort();
         }
 
-        vfs_add_new_special_child_node(dev_node, "null", S_IFCHR | 0666, 0, 0, null_read, null_write, NULL, NULL);
-        vfs_add_new_special_child_node(dev_node, "tty", S_IFCHR | 0666, 0, 0, NULL, NULL, NULL, NULL);
-        vfs_add_new_special_child_node(dev_node, "console", S_IFCHR | 0666, 0, 0, NULL, NULL, NULL, NULL);
+        vfs_create("null", dev_node, S_IFCHR | 0666, 0, 0, null_read, null_write);
+        vfs_create("tty", dev_node, S_IFCHR | 0666, 0, 0, NULL, NULL);
+        vfs_create("console", dev_node, S_IFCHR | 0666, 0, 0, NULL, NULL);
         
         vnode_delete_ref(&dev_node);
     }
     LOG(DEBUG, "Creating /tmp");
-    errno = vfs_mkdir("tmp", vfs_root_node, 01777, 0, 0);
+    errno = vfs_create("tmp", vfs_root_node, 01777, 0, 0);
     if (errno)
         perror("Couldn't create /tmp");
     while (true)
@@ -184,7 +184,7 @@ int main()
             vnode_ref_t ref = vfs_get_vnode_from_path(&errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
             if (!errno)
             {
-                int _errno = vfs_mkdir(action, ref, 0775, 0, 0);
+                int _errno = vfs_create(action, ref, 0775 | S_IFDIR, 0, 0);
                 vnode_delete_ref(&ref);
                 if (_errno)
                 {

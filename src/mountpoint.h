@@ -22,7 +22,7 @@ struct mountpoint
     int (*explore)(vnode_ref_t); 
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 
     ssize_t (*write)(vnode_ref_t, void*, size_t, off_t);
-    int (*mkdir)(const char*, vnode_ref_t, struct stat*);
+    int (*create)(const char*, vnode_ref_t, struct stat*, void**, void (**)(void*));
     // TODO: Add more operations
     void (*flush)(vnode_ref_t);
 
