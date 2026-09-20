@@ -24,8 +24,14 @@ int vfs_explore(vnode_ref_t ref)
     release_spinlock_noint(&node->lock, flags);
     vfs_unload_children(ref);
 
-    int (*explore)(vnode_ref_t) = node->mountpoint.ptr->explore;
-    int ret = explore ? explore(ref) : 0;
+    int ret = ENOSYS; 
+    if (!node->mountpoint.ptr)
+        LOG(WARN, "NULL mountpoint");
+    else
+    {
+        int (*explore)(vnode_ref_t) = node->mountpoint.ptr->explore;
+        ret = explore ? explore(ref) : 0;
+    }
 
     flags = acquire_spinlock_noint(&node->lock);
     node->flags |= VNODE_EXPLORED;

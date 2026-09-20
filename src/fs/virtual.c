@@ -4,6 +4,7 @@
 #include "../log.h"
 #include <errno.h>
 #include <limits.h>
+#include <string.h>
 
 ino_t virtfs_generate_ino()
 {
@@ -15,7 +16,6 @@ int virtfs_explore(vnode_ref_t vnode)
 {
     char path[PATH_MAX];
     vfs_get_relative_path_to_node_from_mountpoint(vnode, path, sizeof(path));
-    LOG(DEBUG, "virtfs_explore: \"%s\"", path);
     int _errno;
     vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ vnode.ptr->mountpoint.ptr->data }, (vnode_ref_t){ NULL }, false);
     if (!node.ptr) return _errno;
@@ -47,13 +47,16 @@ ssize_t virtfs_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 }
 int virtfs_mkdir(const char* name, vnode_ref_t parent, struct stat* st)
 {
-    // TODO: Create new vnode in tree
-    (void)name;
-    (void)parent;
-    (void)st;
+    char path[PATH_MAX];
+    vfs_get_relative_path_to_node_from_mountpoint(parent, path, sizeof(path));
+    int _errno;
+    vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ parent.ptr->mountpoint.ptr->data }, (vnode_ref_t){ NULL }, false);
+    if (!node.ptr) return _errno;
+    LOG(TRACE, "Adding new node \"%s\"", name);
+    vfs_add_new_child_node(node, name, st, NULL, NULL);
+    vnode_delete_ref(&node);
     return 0;
 }
-
 
 void virtfs_flush(vnode_ref_t vnode)
 {
@@ -71,6 +74,7 @@ vnode_t* virtfs_create_data()
 }
 void virtfs_free_data(void* node_ref)
 {
+    if (!node_ref) return;
     vnode_ref_t ref = { node_ref };
     vfs_unload_children(ref);
     vnode_delete_ref(&ref);
