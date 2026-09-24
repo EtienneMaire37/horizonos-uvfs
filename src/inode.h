@@ -3,13 +3,13 @@
 #include "ref.h"
 #include "inode_ref.h"
 #include "vnode_ref.h"
-#include <stdatomic.h>
+#include "spinlock.h"
 #include <sys/stat.h>
 
 struct inode
 {
     struct ref ref;
-    atomic_flag lock;
+    spinlock_noint_t lock;
 
     void* fs_specific;
     void (*free_fs_specific_data)(void*);

@@ -10,7 +10,7 @@ inode_ref_t vfs_create_new_inode(const struct stat* st, void* fs_specific, void 
     if (!newn) return (inode_ref_t){ NULL };
     newn->st = *st;
     newn->st.st_nlink = 0;
-    newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
+    newn->lock = SPINLOCK_NOINT_INIT;
     newn->fs_specific = fs_specific;
     newn->free_fs_specific_data = free_fs_specific_data;
     newn->ref = INODE_REF_INIT;

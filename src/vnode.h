@@ -2,12 +2,12 @@
 
 #include <bits/types/siginfo_t.h>
 #include <sys/stat.h>
-#include <stdatomic.h>
 #include <sys/types.h>
 #include <stdbool.h>
 #include <stddef.h>
 
 #include "ref.h"
+#include "spinlock.h"
 #include "flags.h"
 #include "vnode_ref.h"
 #include "mountpoint_ref.h"
@@ -25,7 +25,7 @@ struct vnode
     vnode_t *_Atomic next, *_Atomic parent; // Non owning references to other nodes
     // ! No "prev" as it would cause problems to make the system MT-safe and is not really useful
     
-    atomic_flag lock;
+    spinlock_noint_t lock;
     vnode_flags_t flags;
     mountpoint_ref_t mountpoint;
 

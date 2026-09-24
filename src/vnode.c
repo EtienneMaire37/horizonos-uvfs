@@ -68,7 +68,7 @@ vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode, bool dont_
     newn->inode = inode_copy_ref(inode);
     if (!dont_count_hardlink)
         __sync_fetch_and_add(&newn->inode.ptr->st.st_nlink, 1);
-    newn->lock = (atomic_flag)ATOMIC_FLAG_INIT;
+    newn->lock = SPINLOCK_NOINT_INIT;
     newn->flags = VNODE_INIT;
     newn->ref = VNODE_REF_INIT;
     newn->dont_count_hardlink = dont_count_hardlink;
