@@ -16,6 +16,7 @@
 
 static inline char* get_input(char* buf, size_t bytes)
 {
+    fflush(stdout);
     char* ret = fgets(buf, bytes - 1, stdin);
     if (!ret) return NULL;
     ret[bytes - 1] = 0;
@@ -35,7 +36,6 @@ static inline char* get_input(char* buf, size_t bytes)
 
 #define get_node() \
         printf("Path to node? "); \
-        fflush(stdout); \
         ret = get_input(path, sizeof(path)); \
         if (!ret) \
         { \
@@ -44,6 +44,13 @@ static inline char* get_input(char* buf, size_t bytes)
         } \
         int _errno; \
         vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
+
+#define check_input(ret) \
+        do { if (!ret) \
+        { \
+            perror("Couldn't read input"); \
+            abort(); \
+        } } while (0)
 
 int main()
 {
@@ -79,16 +86,10 @@ int main()
         perror("Couldn't create /tmp");
     while (true)
     {
-        fflush(stdout);
         char path[PATH_MAX], action[64];
-        printf("Action? (\n\tstat: stat node,\n\ttree: get tree from node,\n\tunload: unload children,\n\tmount: mount filesystem,\n\tunmount: unmount filesystem,\n\tread: print file contents,\n\tcreate: create empty file,\n\tmkdir: create folder,\n\texplore: explore folder,\n\tfds: list open file descriptors) ");
-        fflush(stdout);
+        printf("Action? (\n\tstat: stat node,\n\ttree: get tree from node,\n\tunload: unload children,\n\tmount: mount filesystem,\n\tunmount: unmount filesystem,\n\tread: print file contents,\n\tcreate: create empty file,\n\tmkdir: create folder,\n\texplore: explore folder,\n\tfds: list open file descriptors,\n\topen: open a new open file descriptor pointing to a file,\n\tclose: close a file descriptor) ");
         char* ret = get_input(action, sizeof(action));
-        if (!ret)
-        {
-            perror("Couldn't read input");
-            abort();
-        }
+        check_input(ret);
         if (strcmp(action, "stat") == 0)
         {
             get_node()
@@ -133,18 +134,10 @@ int main()
             get_node()
             printf("Type of file system to mount? (virt: virtual (in memory) file system, initrd: ustar file containing the initrd) ");
             ret = get_input(action, sizeof(action));
-            if (!ret)
-            {
-                perror("Couldn't read input");
-                abort();
-            }
+            check_input(ret);
             printf("Path to the device to mount? ");
             ret = get_input(path, sizeof(path));
-            if (!ret)
-            {
-                perror("Couldn't read input");
-                abort();
-            }
+            check_input(ret);
             vnode_ref_t mount_device = vfs_get_vnode_from_path(&_errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
             errno = vfs_mount(node, mount_device, action);
             vnode_delete_ref(&mount_device);
@@ -193,11 +186,7 @@ int main()
             const char* valname = file ? "file" : "directory";
             printf("Name of new %s? ", valname);
             ret = get_input(action, sizeof(action));
-            if (!ret)
-            {
-                perror("Couldn't read input");
-                abort();
-            }
+            check_input(ret);
             _errno = vfs_create(action, node, 0775 | (file ? S_IFREG : S_IFDIR), 0, 0);
             if (_errno)
             {
@@ -217,6 +206,39 @@ int main()
             }
             vfs_explore(node);
             vnode_delete_ref(&node);
+        }
+        else if (strcmp(action, "open") == 0)
+        {
+            get_node()
+            if (!node.ptr)
+            {
+                errno = _errno;
+                perror("Couldn't read vnode");
+                continue;                    
+            }
+            int flags;
+            printf("Flags? ");
+            ret = get_input(action, sizeof(action));
+            check_input(ret);
+            flags = strtol(ret, NULL, 0);
+            mode_t mode;
+            printf("Mode? ");
+            ret = get_input(action, sizeof(action));
+            check_input(ret);
+            mode = strtol(ret, NULL, 0);
+            errno = -vfs_open(path, flags, mode, 0, 0, vfs_root_node, vfs_root_node, S_IWGRP | S_IWOTH);
+            vnode_delete_ref(&node);
+            if (errno > 0)
+                perror("Couldn't open file");
+        }
+        else if (strcmp(action, "close") == 0)
+        {
+            printf("fd to close? ");
+            ret = get_input(action, sizeof(action));
+            check_input(ret);
+            errno = vfs_close(atoi(action));
+            if (errno)
+                perror("Couldn't close fd");
         }
         else if (strcmp(action, "fds") == 0)
         {

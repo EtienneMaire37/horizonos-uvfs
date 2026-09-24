@@ -65,6 +65,7 @@ int vfs_allocate_thread_fd(open_file_descriptor_ref_t desc, int flags)
         {
             entries[i].fd.ptr = open_file_descriptor_copy_ref(desc).ptr;
             entries[i].flags = flags;
+            fd = i;
             goto end;
         }
     }
@@ -84,13 +85,17 @@ bool vfs_get_thread_fd(int fd, open_file_descriptor_ref_t* desc, int* flags)
     return true;
 }
 
-bool vfs_close(int fd)
+int vfs_close(int fd)
 {
-    if (fd < 0 || fd >= OFDT_ENTRIES) return false;
+    if (fd < 0 || fd >= OFDT_ENTRIES) return EBADF;
+    int ret = 0;
     uint32_t eflags = acquire_spinlock_noint(&lock);
-    open_file_descriptor_delete_ref(&entries[fd].fd);
+    if (entries[fd].fd.ptr)
+        open_file_descriptor_delete_ref(&entries[fd].fd);
+    else
+        ret = EBADF;
     release_spinlock_noint(&lock, eflags);
-    return true;
+    return ret;
 }
 int vfs_open(const char* path, int flags, mode_t mode,
              uid_t euid, gid_t egid,
@@ -139,7 +144,13 @@ int vfs_open(const char* path, int flags, mode_t mode,
         }
     }
     open_file_descriptor_ref_t desc = vfs_allocate_new_open_file_descriptor(flags, vnode, &vnode.ptr->inode.ptr->st);
+    if (!desc.ptr)
+    {
+        ret = -ENOMEM;
+        goto end;
+    }
     ret = vfs_allocate_thread_fd(desc, (flags & O_CLOEXEC) ? FD_CLOEXEC : 0);
+    if (ret == -1) ret = -EMFILE;
 end:
     vnode_delete_ref(&vnode);
     return ret;
