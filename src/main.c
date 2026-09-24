@@ -1,5 +1,9 @@
 #include <linux/limits.h>
 #include <sys/stat.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "vnode.h"
 #include "inode.h"
@@ -8,10 +12,7 @@
 #include "fs/initrd.h"
 #include "fs/null.h"
 #include "util/assert.h"
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
+#include "open_file.h"
 
 static inline char* get_input(char* buf, size_t bytes)
 {
@@ -31,6 +32,18 @@ static inline char* get_input(char* buf, size_t bytes)
     }
     return ret;
 }
+
+#define get_node() \
+        printf("Path to node? "); \
+        fflush(stdout); \
+        ret = get_input(path, sizeof(path)); \
+        if (!ret) \
+        { \
+            perror("Couldn't read input"); \
+            abort(); \
+        } \
+        int _errno; \
+        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
 
 int main()
 {
@@ -61,14 +74,14 @@ int main()
         vnode_delete_ref(&dev_node);
     }
     LOG(DEBUG, "Creating /tmp");
-    errno = vfs_create("tmp", vfs_root_node, 01777, 0, 0);
+    errno = vfs_create("tmp", vfs_root_node, 01777 | S_IFDIR, 0, 0);
     if (errno)
         perror("Couldn't create /tmp");
     while (true)
     {
         fflush(stdout);
         char path[PATH_MAX], action[64];
-        printf("Action? (\n\tstat: stat node, \n\ttree: get tree from node, \n\tunload: unload children, \n\tmount: mount filesystem, \n\tunmount: unmount filesystem, \n\tread: print file contents, \n\tmkdir: create folder, \n\texplore: explore folder) ");
+        printf("Action? (\n\tstat: stat node,\n\ttree: get tree from node,\n\tunload: unload children,\n\tmount: mount filesystem,\n\tunmount: unmount filesystem,\n\tread: print file contents,\n\tcreate: create empty file,\n\tmkdir: create folder,\n\texplore: explore folder,\n\tfds: list open file descriptors) ");
         fflush(stdout);
         char* ret = get_input(action, sizeof(action));
         if (!ret)
@@ -76,19 +89,9 @@ int main()
             perror("Couldn't read input");
             abort();
         }
-        printf("Path to node? ");
-        fflush(stdout);
-        ret = get_input(path, sizeof(path));
-        if (!ret)
-        {
-            perror("Couldn't read input");
-            abort();
-        }
-
-        int _errno;
-        vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
         if (strcmp(action, "stat") == 0)
         {
+            get_node()
             if (!node.ptr)
             {
                 errno = _errno;
@@ -98,9 +101,11 @@ int main()
             printf("Inode: %lu\n", (unsigned long)node.ptr->inode.ptr->st.st_ino);
             printf("Mode: %#o\n", (unsigned int)node.ptr->inode.ptr->st.st_mode);
             printf("Uid: %u\tGid: %u\n", (unsigned int)node.ptr->inode.ptr->st.st_uid, (unsigned int)node.ptr->inode.ptr->st.st_gid);
+            vnode_delete_ref(&node);
         }
         else if (strcmp(action, "tree") == 0)
         {
+            get_node()
             if (!node.ptr)
             {
                 errno = _errno;
@@ -109,9 +114,11 @@ int main()
             }
             printf("Tree:\n");
             vfs_log_structure(node);
+            vnode_delete_ref(&node);
         }
         else if (strcmp(action, "unload") == 0)
         {
+            get_node()
             if (!node.ptr)
             {
                 errno = _errno;
@@ -119,9 +126,11 @@ int main()
                 continue;                    
             }
             vfs_unload_children(node);
+            vnode_delete_ref(&node);
         }
         else if (strcmp(action, "mount") == 0)
         {
+            get_node()
             printf("Type of file system to mount? (virt: virtual (in memory) file system, initrd: ustar file containing the initrd) ");
             ret = get_input(action, sizeof(action));
             if (!ret)
@@ -141,9 +150,11 @@ int main()
             vnode_delete_ref(&mount_device);
             if (errno)
                 perror("Couldn't mount");
+            vnode_delete_ref(&node);
         }
         else if (strcmp(action, "unmount") == 0)
         {
+            get_node()
             if (!node.ptr)
             {
                 errno = _errno;
@@ -152,9 +163,11 @@ int main()
             }
             if ((errno = vfs_unmount(node)))
                 perror("Couldn't unmount node");
+            vnode_delete_ref(&node);
         }
         else if (strcmp(action, "read") == 0)
         {
+            get_node()
             if (!node.ptr)
             {
                 errno = _errno;
@@ -171,32 +184,31 @@ int main()
             errno *= -1;
             if (errno)
                 perror("Couldn't read file");
+            vnode_delete_ref(&node);
         }
-        else if (strcmp(action, "mkdir") == 0)
+        else if (strcmp(action, "mkdir") == 0 || strcmp(action, "create") == 0)
         {
-            printf("Name of new dir? ");
+            get_node()
+            bool file = strcmp(action, "create") == 0;
+            const char* valname = file ? "file" : "directory";
+            printf("Name of new %s? ", valname);
             ret = get_input(action, sizeof(action));
             if (!ret)
             {
                 perror("Couldn't read input");
                 abort();
             }
-            vnode_ref_t ref = vfs_get_vnode_from_path(&errno, 0, 0, path, vfs_root_node, (vnode_ref_t){ NULL }, true);
-            if (!errno)
+            _errno = vfs_create(action, node, 0775 | (file ? S_IFREG : S_IFDIR), 0, 0);
+            if (_errno)
             {
-                int _errno = vfs_create(action, ref, 0775 | S_IFDIR, 0, 0);
-                vnode_delete_ref(&ref);
-                if (_errno)
-                {
-                    errno = _errno;
-                    perror("Couldn't create directory");
-                }
+                errno = _errno;
+                perror("Couldn't create directory entry");
             }
-            else
-                perror("Couldn't find parent");
+            vnode_delete_ref(&node);
         }
         else if (strcmp(action, "explore") == 0)
         {
+            get_node()
             if (!node.ptr)
             {
                 errno = _errno;
@@ -204,10 +216,14 @@ int main()
                 continue;                    
             }
             vfs_explore(node);
+            vnode_delete_ref(&node);
+        }
+        else if (strcmp(action, "fds") == 0)
+        {
+            vfs_log_thread_fds();
         }
         else
             printf("Invalid action\n");
-        vnode_delete_ref(&node);
         vfs_verify_tree_integrity();
     }
 }

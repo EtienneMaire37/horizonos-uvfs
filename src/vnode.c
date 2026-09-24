@@ -697,6 +697,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
 
 int _vfs_create(const char* name, vnode_ref_t parent, mode_t mode, uid_t uid, gid_t gid, vfs_create_params_t params)
 {
+    ASSERT(S_ISDIR(mode) || S_ISREG(mode) || S_ISBLK(mode) || S_ISCHR(mode) || S_ISFIFO(mode) || S_ISLNK(mode));
     mountpoint_ref_t mountpoint = vnode_dereference_mountpoint(parent, mountpoint);
     if (!mountpoint.ptr) return EPERM;
     vfs_explore(parent);

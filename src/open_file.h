@@ -40,4 +40,10 @@ void vfs_free_open_file_descriptor(int ofd);
 
 int vfs_allocate_thread_fd(open_file_descriptor_ref_t desc, int flags);
 bool vfs_get_thread_fd(int fd, open_file_descriptor_ref_t* desc, int* flags);
-bool vfs_close_thread_fd(int fd);
+int vfs_open(const char* path, int flags, mode_t mode,
+             uid_t euid, gid_t egid,
+             vnode_ref_t root, vnode_ref_t cwd,
+             mode_t umask);
+bool vfs_close(int fd);
+
+void vfs_log_thread_fds();

@@ -2,7 +2,8 @@
 
 #include <stdio.h>
 
-#ifdef LOG_LEVEL 
+#define LOG_MACRO(level, required_level, ...) do { if (level >= required_level) { fprintf(stderr, "[%s]\t[%s:%d]\t%s\t", __func__, __FILE__, __LINE__, log_level[level % (sizeof(log_level) / sizeof(log_level[0]))]); fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
+
 static const char* log_level[] =
 {
     "\033[1;38;5;240m[TRACE]\033[0m",
@@ -20,7 +21,9 @@ static const char* log_level[] =
 #define ERROR       4
 #define FATAL       5
 
-#define LOG(level, ...) do { if (level >= LOG_LEVEL) { fprintf(stderr, "[%s]\t[%s:%d]\t%s\t", __func__, __FILE__, __LINE__, log_level[level % (sizeof(log_level) / sizeof(log_level[0]))]); fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
+#ifdef LOG_LEVEL 
+#define LOG(level, ...) LOG_MACRO(level, LOG_LEVEL, __VA_ARGS__)
 #else
-#define LOG(level, ...)
+// Do this to have LSP support
+#define LOG(level, ...) LOG_MACRO(level, -1, __VA_ARGS__)
 #endif

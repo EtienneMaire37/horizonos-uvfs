@@ -1,10 +1,13 @@
+#include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
 #include "open_file.h"
 #include "ref.h"
 #include "vnode.h"
+#include "inode.h"
 #include "vnode_ref.h"
 #include "spinlock.h"
 #include "util/assert.h"
-#include <stdlib.h>
 
 /* STUB */
 // TODO: Use rw locks everywhere it should be used
@@ -31,7 +34,7 @@ open_file_descriptor_ref_t open_file_descriptor_copy_ref(open_file_descriptor_re
 
 open_file_descriptor_ref_t vfs_allocate_new_open_file_descriptor(int flags, vnode_ref_t vnode, struct stat *st)
 {
-    open_file_descriptor_ref_t ref = { malloc(sizeof(open_file_descriptor_t)) };
+    open_file_descriptor_ref_t ref = { calloc(1, sizeof(open_file_descriptor_t)) };
     if (!ref.ptr) return ref;
     ref.ptr->ref = OPEN_FD_REF_INIT;
     ref_inc(&ref.ptr->ref);
@@ -40,6 +43,8 @@ open_file_descriptor_ref_t vfs_allocate_new_open_file_descriptor(int flags, vnod
     ref.ptr->lock = SPINLOCK_NOINT_INIT;
     ref.ptr->flags = flags;
     ref.ptr->offset = 0;
+    // TODO: Make a wrapper around vnode's io functions
+    // or just design this better
     return ref;
 }
 
@@ -78,11 +83,78 @@ bool vfs_get_thread_fd(int fd, open_file_descriptor_ref_t* desc, int* flags)
     release_spinlock_noint(&lock, eflags);
     return true;
 }
-bool vfs_close_thread_fd(int fd)
+
+bool vfs_close(int fd)
 {
     if (fd < 0 || fd >= OFDT_ENTRIES) return false;
     uint32_t eflags = acquire_spinlock_noint(&lock);
     open_file_descriptor_delete_ref(&entries[fd].fd);
     release_spinlock_noint(&lock, eflags);
     return true;
+}
+int vfs_open(const char* path, int flags, mode_t mode,
+             uid_t euid, gid_t egid,
+             vnode_ref_t root, vnode_ref_t cwd,
+             mode_t umask)
+{
+    ASSERT(root.ptr); // Should always be the root of the current process (probably)
+    ASSERT(cwd.ptr);  // Should always be the current working directory of the current process (not null)
+
+    // Not implemented
+    if (flags & ~(O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC)) return EINVAL;
+
+    // Invalid flag combinations
+    if ((flags & O_EXCL) && !(flags & O_CREAT)) return EINVAL;
+
+    // TODO: Implement ACLs
+    mode &= ~umask;
+    
+    int _errno;
+    vnode_ref_t vnode = vfs_get_vnode_from_path(&_errno, euid, egid, path, root, cwd, !(flags & O_NOFOLLOW));
+    int ret = -ENOSYS;
+    if (!vnode.ptr)
+    {
+        if (_errno == ENOENT && (flags & O_CREAT))
+        {
+            // TODO: Implement file creation
+        }
+        return -_errno;
+    }
+    else
+    {
+        mode = vnode.ptr->inode.ptr->st.st_mode;
+        if ((flags & O_DIRECTORY) && !S_ISDIR(mode))
+        {
+            ret = -ENOTDIR;
+            goto end;
+        }
+        if ((flags & O_CREAT) && (flags & O_EXCL))
+        {
+            ret = -EEXIST;
+            goto end;
+        }
+        if ((flags & O_TRUNC) && S_ISREG(mode))
+        {
+            // TODO: trunc
+        }
+    }
+    open_file_descriptor_ref_t desc = vfs_allocate_new_open_file_descriptor(flags, vnode, &vnode.ptr->inode.ptr->st);
+    ret = vfs_allocate_thread_fd(desc, (flags & O_CLOEXEC) ? FD_CLOEXEC : 0);
+end:
+    vnode_delete_ref(&vnode);
+    return ret;
+}
+
+void vfs_log_thread_fds()
+{
+    // No need to lock as it is only a stub for debugging the user space build (same as everywhere else)
+    for (int i = 0; i < OFDT_ENTRIES; i++)
+    {
+        if (entries[i].fd.ptr)
+        {
+            LOG(DEBUG, "fd %d: ", i);
+            LOG(DEBUG, "- flags: %#o", entries[i].flags);
+            LOG(DEBUG, "- mode:  %#o", entries[i].fd.ptr->st.st_mode);
+        }
+    }
 }
