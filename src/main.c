@@ -154,7 +154,10 @@ int main()
                 perror("Couldn't read vnode");
                 continue;                    
             }
-            if ((errno = vfs_unmount(node)))
+            printf("lazy unmount? (y/n, defaults to n) ");
+            ret = get_input(action, sizeof(action));
+            check_input(ret);
+            if ((errno = vfs_unmount(node, action[0] == 'Y' || action[0] == 'y')))
                 perror("Couldn't unmount node");
             vnode_delete_ref(&node);
         }

@@ -240,14 +240,6 @@ void _vfs_unload_children(vnode_ref_t node, bool locked)
         release_spinlock_noint(&node.ptr->lock, flags);
     while (child.ptr)
     {
-        uint32_t flags = acquire_spinlock_noint(&child.ptr->lock);
-        if (vnode_is_mountpoint_locked(child))
-        {
-            release_spinlock_noint(&child.ptr->lock, flags);
-            vfs_unmount(child);
-        }
-        else
-            release_spinlock_noint(&child.ptr->lock, flags);
         ref_dec(&child.ptr->ref);
         vnode_ref_t old_child = vnode_copy_ref(child);
         vnode_move_reference(&child, next);
@@ -268,14 +260,22 @@ void vfs_unparent_children(vnode_ref_t node)
     }
 }
 
-int vfs_unmount(vnode_ref_t ref)
+int vfs_unmount(vnode_ref_t ref, bool lazy)
 {
     ASSERT(ref.ptr);
     uint32_t flags = acquire_spinlock_noint(&ref.ptr->lock);
+    if (!ref.ptr->mountpoint.ptr)
+    {
+        release_spinlock_noint(&ref.ptr->lock, flags);
+        return 0;
+    }
     if (ref.ptr->mountpoint.ptr->root.ptr != ref.ptr)
     {
         release_spinlock_noint(&ref.ptr->lock, flags);
-        return EINVAL;
+
+        // FIXME: STUB because vfs_mount currently unmounts before mounting,
+        // should return an error once mountpoint stacks are properly implemented
+        return 0; // EINVAL;
     }
     vnode_ref_t parent = vnode_dereference_vnode_locked(ref, parent);
     if (!parent.ptr)
@@ -284,6 +284,15 @@ int vfs_unmount(vnode_ref_t ref)
         LOG(ERROR, "Tried to unmount root");
         return EPERM;
     }
+    uint32_t mp_flags = acquire_spinlock_noint(&ref.ptr->mountpoint.ptr->lock);
+    if (ref.ptr->mountpoint.ptr->busy && !lazy)
+    {
+        release_spinlock_noint(&ref.ptr->lock, flags);
+        release_spinlock_noint(&ref.ptr->mountpoint.ptr->lock, mp_flags);
+        return EBUSY;
+    }
+    ref.ptr->mountpoint.ptr->unmounting = true;
+    release_spinlock_noint(&ref.ptr->mountpoint.ptr->lock, mp_flags);
     mountpoint_delete_ref(&ref.ptr->mountpoint);
     ref.ptr->mountpoint.ptr = mountpoint_copy_ref(parent.ptr->mountpoint).ptr;
     ref.ptr->read = ref.ptr->mountpoint.ptr->read;
@@ -654,6 +663,14 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     if (need_vnode)
         if (!S_ISBLK(dev.ptr->inode.ptr->st.st_mode))
             return ENOTBLK;
+    int _errno;
+    
+    // XXX: STUB
+    // TODO: Implement a mountpoint stack
+    if ((_errno = vfs_unmount(ref, false)))
+        return _errno;
+    // XXX
+    
     mountpoint_t* mountpoint = calloc(1, sizeof(mountpoint_t));
     if (!mountpoint)
         return ENOMEM;
@@ -697,6 +714,7 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
 
 int _vfs_create(const char* name, vnode_ref_t parent, mode_t mode, uid_t uid, gid_t gid, vfs_create_params_t params)
 {
+    if (!parent.ptr) return ENOENT;
     ASSERT(S_ISDIR(mode) || S_ISREG(mode) || S_ISBLK(mode) || S_ISCHR(mode) || S_ISFIFO(mode) || S_ISLNK(mode));
     mountpoint_ref_t mountpoint = vnode_dereference_mountpoint(parent, mountpoint);
     if (!mountpoint.ptr) return EPERM;

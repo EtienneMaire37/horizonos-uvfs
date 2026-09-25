@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include "open_file.h"
+#include "mountpoint.h"
 #include "ref.h"
 #include "vnode.h"
 #include "inode.h"
@@ -37,7 +38,6 @@ open_file_descriptor_ref_t vfs_allocate_new_open_file_descriptor(int flags, vnod
     open_file_descriptor_ref_t ref = { calloc(1, sizeof(open_file_descriptor_t)) };
     if (!ref.ptr) return ref;
     ref.ptr->ref = OPEN_FD_REF_INIT;
-    ref_inc(&ref.ptr->ref);
     ref.ptr->st = *st;
     ref.ptr->vnode = vnode_copy_ref(vnode);
     ref.ptr->lock = SPINLOCK_NOINT_INIT;
@@ -48,9 +48,41 @@ open_file_descriptor_ref_t vfs_allocate_new_open_file_descriptor(int flags, vnod
     return ref;
 }
 
+open_file_descriptor_ref_t vfs_create_new_file_descriptor_from_vnode(int* _errno, int flags, vnode_ref_t vnode)
+{
+    ASSERT(_errno);
+    ASSERT(vnode.ptr);
+    *_errno = 0;
+    open_file_descriptor_ref_t ofd = vfs_allocate_new_open_file_descriptor(flags, vnode, &vnode.ptr->inode.ptr->st);
+    if (!ofd.ptr)
+    {
+        *_errno = ENOMEM;
+        return ofd;
+    }
+    mountpoint_ref_t mp = vnode_dereference_mountpoint(vnode, mountpoint);
+    uint32_t eflags = acquire_spinlock_noint(&mp.ptr->lock);
+    bool unmounting = mp.ptr->unmounting;
+    if (!unmounting)
+        mp.ptr->busy++;
+    release_spinlock_noint(&mp.ptr->lock, eflags);
+    mountpoint_delete_ref(&mp);
+    if (unmounting)
+    {
+        open_file_descriptor_delete_ref(&ofd);
+        *_errno = ENOENT;
+        return ofd;
+    }
+    return ofd;
+}
+
 void ___open_file_descriptor_free(const struct ref *ref)
 {
     open_file_descriptor_t* ofd = container_of(ref, open_file_descriptor_t, ref);
+    mountpoint_ref_t mp = vnode_dereference_mountpoint(ofd->vnode, mountpoint);
+    uint32_t eflags = acquire_spinlock_noint(&mp.ptr->lock);
+    mp.ptr->busy--;
+    release_spinlock_noint(&mp.ptr->lock, eflags);
+    mountpoint_delete_ref(&mp);
     vnode_delete_ref(&ofd->vnode);
     free(ofd);
 }
@@ -116,6 +148,7 @@ int vfs_open(const char* path, int flags, mode_t mode,
     
     int _errno;
     vnode_ref_t vnode = vfs_get_vnode_from_path(&_errno, euid, egid, path, root, cwd, !(flags & O_NOFOLLOW));
+
     int ret = -ENOSYS;
     if (!vnode.ptr)
     {
@@ -123,7 +156,8 @@ int vfs_open(const char* path, int flags, mode_t mode,
         {
             // TODO: Implement file creation
         }
-        return -_errno;
+        ret = -_errno;
+        goto end;
     }
     else
     {
@@ -143,13 +177,14 @@ int vfs_open(const char* path, int flags, mode_t mode,
             // TODO: trunc
         }
     }
-    open_file_descriptor_ref_t desc = vfs_allocate_new_open_file_descriptor(flags, vnode, &vnode.ptr->inode.ptr->st);
+    open_file_descriptor_ref_t desc = vfs_create_new_file_descriptor_from_vnode(&_errno, flags, vnode);
     if (!desc.ptr)
     {
-        ret = -ENOMEM;
+        ret = -_errno;
         goto end;
     }
     ret = vfs_allocate_thread_fd(desc, (flags & O_CLOEXEC) ? FD_CLOEXEC : 0);
+    open_file_descriptor_delete_ref(&desc);
     if (ret == -1) ret = -EMFILE;
 end:
     vnode_delete_ref(&vnode);

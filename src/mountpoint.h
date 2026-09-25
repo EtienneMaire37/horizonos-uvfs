@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mountpoint_ref.h"
+#include "spinlock.h"
 #include "vnode_ref.h"
 #include "ref.h"
 #include "inode.h"
@@ -15,9 +16,12 @@ struct mountpoint
     vnode_ref_t dev_node;
     blksize_t blksize;
 
+    // Stuff to fix race conditions
+    spinlock_noint_t lock;
+    bool unmounting;
+    int busy;
+
     ino_t (*generate_ino)();
-    // void* (*create_inode)(const char*, vnode_ref_t, const struct stat*);
-    // void (*free_inode)(void*);
 
     int (*explore)(vnode_ref_t); 
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 

@@ -99,7 +99,7 @@ size_t vfs_get_relative_path_to_node_from_mountpoint(vnode_ref_t ref, char* buf,
 bool vfs_verify_tree_integrity();
 vnode_ref_t vnode_copy_ref(vnode_ref_t ref);
 vnode_ref_t vfs_get_vnode_from_path(int* _errno, uid_t uid, gid_t gid, const char* path, vnode_ref_t root, vnode_ref_t cwd, bool follow_symlinks);
-int vfs_unmount(vnode_ref_t ref);
+int vfs_unmount(vnode_ref_t ref, bool lazy);
 
 ssize_t vnode_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
 ssize_t vnode_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset);
