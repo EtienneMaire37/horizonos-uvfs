@@ -138,6 +138,7 @@ int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_c
 
     inode_ref_t inode = params.inode.ptr ? (inode_ref_t){ NULL } : vfs_create_new_inode(&params.st, params.fs_specific, params.free_fs_specific_data, parent_mountpoint);
     vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : params.inode, params.dont_count_hardlink);
+    inode_delete_ref(&inode);
 
     // * From this point on if we free correctly the "child" vnode fs_specific is cleaned up automatically
     // * That means we MUST NOT free it manually as it would cause a double free
@@ -147,15 +148,12 @@ int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_c
     if (!child.ptr)
     {
         LOG(WARN, "Couldn't allocate child");
-        inode_delete_ref(&inode);
         vnode_delete_ref(&child);
         mountpoint_delete_ref(&parent_mountpoint);
         return ENOMEM;
     }
     child.ptr->flags = params.explored ? VNODE_EXPLORED : VNODE_INIT;
 
-    inode_stack_push(&child.ptr->inodes, inode.ptr ? inode : params.inode);
-    inode_delete_ref(&inode);
     bool mp = parent_mountpoint.ptr;
     child.ptr->read = params.read ? params.read : mp ? parent_mountpoint.ptr->read : NULL;
     child.ptr->write = params.write ? params.write : mp ? parent_mountpoint.ptr->write : NULL;
@@ -346,11 +344,10 @@ void vfs_log_structure_helper(vnode_ref_t node, int depth)
 
     struct stat st = vnode_stat(node);
     mountpoint_ref_t mp = inode_stack_top_mountpoint(&node.ptr->inodes);
-    LOG(DEBUG, "%*s- \"%s\" (inode %ld) [%d hardlinks] [%d references] (flags: %#x)%s%s", depth, "",
+    LOG(DEBUG, "%*s- \"%s\" (inode %ld) [%d hardlinks] [%d references]%s%s", depth, "",
         node.ptr->name, (long)st.st_ino,
         (int)st.st_nlink,
         node.ptr->ref.count,
-        node.ptr->flags,
         ((node.ptr->flags & VNODE_EXPLORED) || (!S_ISDIR(st.st_mode))) ? "" : " <NOT EXPLORED>",
         (mp.ptr && mp.ptr->root.ptr == node.ptr) ? " <MOUNTPOINT>" : ""
     );
