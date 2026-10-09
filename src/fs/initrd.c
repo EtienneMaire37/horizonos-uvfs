@@ -103,13 +103,11 @@ int initrd_explore(vnode_ref_t vnode)
     }
     return 0;
 }
-ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
+ssize_t initrd_read(inode_ref_t inode, void* buf, size_t count, off_t offset)
 {
-    ASSERT(vnode.ptr);
+    ASSERT(inode.ptr);
     if (offset < 0) return EINVAL;
-    inode_ref_t inode = inode_stack_top_inode(&vnode.ptr->inodes);
     initrd_file_t* file = &initrd_files[*(size_t*)inode.ptr->fs_specific];
-    inode_delete_ref(&inode);
     size_t filesize =    S_ISLNK(file->st.st_mode) ? strlen(file->link) :
                         (S_ISREG(file->st.st_mode) ? (size_t)file->st.st_size : 0);
     if ((size_t)offset >= filesize)
@@ -119,9 +117,9 @@ ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
     memcpy(buf, (S_ISREG(file->st.st_mode) ? file->data : (uint8_t*)file->link) + offset, count);
     return count;
 }
-ssize_t initrd_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
+ssize_t initrd_write(inode_ref_t inode, void* buf, size_t count, off_t offset)
 {
-    (void)vnode;
+    (void)inode;
     (void)buf;
     (void)count;
     (void)offset;

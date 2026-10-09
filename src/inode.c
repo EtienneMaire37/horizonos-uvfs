@@ -16,6 +16,12 @@ inode_ref_t vfs_create_new_inode(const struct stat* st, void* fs_specific, void 
     newn->free_fs_specific_data = free_fs_specific_data;
     newn->ref = INODE_REF_INIT;
     newn->mountpoint = mountpoint_copy_ref(mp);
+
+    if (mp.ptr)
+    {
+        newn->read = mp.ptr->read;
+        newn->write = mp.ptr->write;
+    }
     return (inode_ref_t){ newn };
 }
 

@@ -30,9 +30,7 @@ int virtfs_explore(vnode_ref_t vnode)
     while (node.ptr)
     {
         inode_ref_t inode = inode_stack_top_inode(&node.ptr->inodes);
-        inode_ref_t new_inode = vfs_create_new_inode(&inode.ptr->st, NULL, NULL, mp);
-        vfs_add_new_child_node__hardlink(vnode, node.ptr->name, new_inode, false);
-        inode_delete_ref(&new_inode);
+        vfs_add_new_child_node(vnode, node.ptr->name, &inode.ptr->st, NULL, NULL);
         inode_delete_ref(&inode);
         vnode_move_reference(&node, next);
     }
@@ -41,17 +39,17 @@ int virtfs_explore(vnode_ref_t vnode)
     return 0;
 }
 
-ssize_t virtfs_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
+ssize_t virtfs_read(inode_ref_t inode, void* buf, size_t count, off_t offset)
 {
-    (void)vnode;
+    (void)inode;
     (void)buf;
     (void)count;
     (void)offset;
     return -ENOSYS;
 }
-ssize_t virtfs_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
+ssize_t virtfs_write(inode_ref_t inode, void* buf, size_t count, off_t offset)
 {
-    (void)vnode;
+    (void)inode;
     (void)buf;
     (void)count;
     (void)offset;
@@ -85,7 +83,7 @@ vnode_t* virtfs_create_data()
     st.st_mode = S_IFDIR;
 
     inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL, (mountpoint_ref_t){ NULL });
-    vnode_ref_t ref = vfs_create_new_vnode("virtfs_root", inode, false);
+    vnode_ref_t ref = vfs_create_new_vnode("virtfs_root", inode);
     inode_delete_ref(&inode);
     return ref.ptr;
 }

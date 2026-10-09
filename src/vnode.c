@@ -48,13 +48,13 @@ void vfs_create_root_node()
     st.st_size = 0;
 
     inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL, (mountpoint_ref_t){ NULL });
-    vfs_root_node = vfs_create_new_vnode("/", inode, false);
+    vfs_root_node = vfs_create_new_vnode("/", inode);
     inode_delete_ref(&inode);
 
     LOG(DEBUG, "Done");
 }
 
-vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode, bool dont_count_hardlink)
+vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode)
 {
     ASSERT(name && inode.ptr);
     vnode_t* newn = calloc(1, sizeof(vnode_t));
@@ -67,12 +67,10 @@ vnode_ref_t vfs_create_new_vnode(const char* name, inode_ref_t inode, bool dont_
     }
     vfs_total_nodes++;
     inode_stack_push(&newn->inodes, inode);
-    if (!dont_count_hardlink)
-        __sync_fetch_and_add(&newn->inodes.data[0].ptr->st.st_nlink, 1);
+    __sync_fetch_and_add(&newn->inodes.data[0].ptr->st.st_nlink, 1);
     newn->lock = SPINLOCK_NOINT_INIT;
     newn->flags = VNODE_INIT;
     newn->ref = VNODE_REF_INIT;
-    newn->dont_count_hardlink = dont_count_hardlink;
     return (vnode_ref_t){ newn };
 }
 
@@ -137,7 +135,8 @@ int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_c
     inode_delete_ref(&parent_inode);
 
     inode_ref_t inode = params.inode.ptr ? (inode_ref_t){ NULL } : vfs_create_new_inode(&params.st, params.fs_specific, params.free_fs_specific_data, parent_mountpoint);
-    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : params.inode, params.dont_count_hardlink);
+    mountpoint_delete_ref(&parent_mountpoint);
+    vnode_ref_t child = vfs_create_new_vnode(name, inode.ptr ? inode : params.inode );
     inode_delete_ref(&inode);
 
     // * From this point on if we free correctly the "child" vnode fs_specific is cleaned up automatically
@@ -149,16 +148,10 @@ int _vfs_add_new_child_node_ex(vnode_ref_t node, const char* name, vfs_add_new_c
     {
         LOG(WARN, "Couldn't allocate child");
         vnode_delete_ref(&child);
-        mountpoint_delete_ref(&parent_mountpoint);
         return ENOMEM;
     }
     child.ptr->flags = params.explored ? VNODE_EXPLORED : VNODE_INIT;
 
-    bool mp = parent_mountpoint.ptr;
-    child.ptr->read = params.read ? params.read : mp ? parent_mountpoint.ptr->read : NULL;
-    child.ptr->write = params.write ? params.write : mp ? parent_mountpoint.ptr->write : NULL;
-
-    mountpoint_delete_ref(&parent_mountpoint);
     vfs_explore(node);
 
     vnode_ref_t ref = vnode_dereference_vnode(node, children);
@@ -192,9 +185,9 @@ int vfs_add_new_child_node(vnode_ref_t node, const char* name, const struct stat
 {
     return vfs_add_new_child_node_ex(node, name, .inode = (inode_ref_t){ NULL }, .st = *st, .fs_specific = fs_specific, .free_fs_specific_data = free_fs_specific_data);
 }
-int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode, bool count_hardlink)
+int vfs_add_new_child_node__hardlink(vnode_ref_t node, const char* name, inode_ref_t inode)
 {
-    return vfs_add_new_child_node_ex(node, name, .inode = inode, .st = (struct stat){}, .dont_count_hardlink = !count_hardlink);
+    return vfs_add_new_child_node_ex(node, name, .inode = inode, .st = (struct stat){});
 }
 int vfs_add_new_special_child_node(vnode_ref_t node, const char* name, mode_t mode, uid_t uid, gid_t gid,
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t), ssize_t (*write)(vnode_ref_t, void*, size_t, off_t),
@@ -272,8 +265,6 @@ int vfs_unmount(vnode_ref_t ref, bool lazy)
     uint32_t flags2 = acquire_spinlock_noint(&ref.ptr->exploration_lock);
     inode_ref_t poped = inode_stack_pop(&ref.ptr->inodes);
     inode_delete_ref(&poped);
-    ref.ptr->read = mp.ptr->read;
-    ref.ptr->write = mp.ptr->write;
     vfs_unload_children_locked_exploration_locked(ref);
     release_spinlock_noint(&ref.ptr->exploration_lock, flags2);
     release_spinlock_noint(&ref.ptr->lock, flags);
@@ -298,7 +289,7 @@ void ___vnode_free(const struct ref* _ref)
     while (inode.ptr)
     {
         LOG(TRACE, "Freeing inode and mountpoint");
-        if (!node->dont_count_hardlink) __sync_fetch_and_sub(&inode.ptr->st.st_nlink, 1);
+        __sync_fetch_and_sub(&inode.ptr->st.st_nlink, 1);
         inode_delete_ref(&inode);
         inode = inode_stack_pop(&node->inodes);
     }
@@ -657,16 +648,28 @@ ssize_t vnode_read(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     if (!node) return -ENOENT;
-    ASSERT(node->read);
-    return node->read(ref, buf, bytes, offset);
+    inode_ref_t inode = inode_stack_top_inode(&node->inodes);
+    ssize_t ret = ENOSYS;
+    if (!inode.ptr->read) goto end;
+    ret = inode.ptr->read(inode, buf, bytes, offset);
+
+end:
+    inode_delete_ref(&inode);
+    return ret;
 }
 
 ssize_t vnode_write(vnode_ref_t ref, void* buf, size_t bytes, off_t offset)
 {
     vnode_t* node = ref.ptr;
     if (!node) return -ENOENT;
-    ASSERT(node->write);
-    return node->write(ref, buf, bytes, offset);
+    inode_ref_t inode = inode_stack_top_inode(&node->inodes);
+    ssize_t ret = ENOSYS;
+    if (!inode.ptr->write) goto end;
+    ret = inode.ptr->write(inode, buf, bytes, offset);
+
+end:
+    inode_delete_ref(&inode);
+    return ret;
 }
 
 int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
@@ -728,8 +731,6 @@ int vfs_mount(vnode_ref_t ref, vnode_ref_t dev, const char* fstype)
     inode_stack_push(&ref.ptr->inodes, new_inode);
     inode_delete_ref(&new_inode);
     mountpoint_ref_t mp_ref = { mountpoint };
-    ref.ptr->read = mountpoint->read;
-    ref.ptr->write = mountpoint->write;
     mountpoint_delete_ref(&mp_ref);
 
     release_spinlock_noint(&ref.ptr->exploration_lock, flags2);

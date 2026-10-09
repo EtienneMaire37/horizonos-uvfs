@@ -17,6 +17,9 @@ struct inode
     void* fs_specific;
     void (*free_fs_specific_data)(void*);
     struct stat st;
+
+    ssize_t (*read)(inode_ref_t, void*, size_t, off_t); 
+    ssize_t (*write)(inode_ref_t, void*, size_t, off_t);
 };
 
 #define INODE_REF_INIT ((struct ref){___inode_free, 1})

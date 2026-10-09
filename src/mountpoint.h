@@ -25,8 +25,8 @@ struct mountpoint
     inode_ref_t (*create_root_inode)(mountpoint_t*);
 
     int (*explore)(vnode_ref_t); 
-    ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 
-    ssize_t (*write)(vnode_ref_t, void*, size_t, off_t);
+    ssize_t (*read)(inode_ref_t, void*, size_t, off_t); 
+    ssize_t (*write)(inode_ref_t, void*, size_t, off_t);
     int (*create)(const char*, vnode_ref_t, struct stat*, void**, void (**)(void*));
     // TODO: Add more operations
     void (*flush)(vnode_ref_t);
