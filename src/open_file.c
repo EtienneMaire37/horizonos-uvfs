@@ -2,10 +2,10 @@
 #include <fcntl.h>
 #include <errno.h>
 #include "open_file.h"
+#include "inode_stack.h"
 #include "mountpoint.h"
 #include "ref.h"
 #include "vnode.h"
-#include "inode.h"
 #include "vnode_ref.h"
 #include "spinlock.h"
 #include "util/assert.h"
@@ -53,13 +53,14 @@ open_file_descriptor_ref_t vfs_create_new_file_descriptor_from_vnode(int* _errno
     ASSERT(_errno);
     ASSERT(vnode.ptr);
     *_errno = 0;
-    open_file_descriptor_ref_t ofd = vfs_allocate_new_open_file_descriptor(flags, vnode, &vnode.ptr->inode.ptr->st);
+    struct stat st = vnode_stat(vnode);
+    open_file_descriptor_ref_t ofd = vfs_allocate_new_open_file_descriptor(flags, vnode, &st);
     if (!ofd.ptr)
     {
         *_errno = ENOMEM;
         return ofd;
     }
-    mountpoint_ref_t mp = vnode_dereference_mountpoint(vnode, mountpoint);
+    mountpoint_ref_t mp = inode_stack_top_mountpoint(&vnode.ptr->inodes);
     uint32_t eflags = acquire_spinlock_noint(&mp.ptr->lock);
     bool unmounting = mp.ptr->unmounting;
     if (!unmounting)
@@ -78,12 +79,15 @@ open_file_descriptor_ref_t vfs_create_new_file_descriptor_from_vnode(int* _errno
 void ___open_file_descriptor_free(const struct ref *ref)
 {
     open_file_descriptor_t* ofd = container_of(ref, open_file_descriptor_t, ref);
-    mountpoint_ref_t mp = vnode_dereference_mountpoint(ofd->vnode, mountpoint);
-    uint32_t eflags = acquire_spinlock_noint(&mp.ptr->lock);
-    mp.ptr->busy--;
-    release_spinlock_noint(&mp.ptr->lock, eflags);
-    mountpoint_delete_ref(&mp);
-    vnode_delete_ref(&ofd->vnode);
+    if (ofd->vnode.ptr)
+    {
+        mountpoint_ref_t mp = inode_stack_top_mountpoint(&ofd->vnode.ptr->inodes);
+        uint32_t eflags = acquire_spinlock_noint(&mp.ptr->lock);
+        mp.ptr->busy--;
+        release_spinlock_noint(&mp.ptr->lock, eflags);
+        mountpoint_delete_ref(&mp);
+        vnode_delete_ref(&ofd->vnode);
+    }
     free(ofd);
 }
 
@@ -161,7 +165,7 @@ int vfs_open(const char* path, int flags, mode_t mode,
     }
     else
     {
-        mode = vnode.ptr->inode.ptr->st.st_mode;
+        mode = vnode_stat(vnode).st_mode;
         if ((flags & O_DIRECTORY) && !S_ISDIR(mode))
         {
             ret = -ENOTDIR;

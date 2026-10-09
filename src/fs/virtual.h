@@ -11,3 +11,4 @@ int virtfs_create(const char* name, vnode_ref_t parent, struct stat* st, void** 
 void virtfs_flush(vnode_ref_t vnode);
 vnode_t* virtfs_create_data();
 void virtfs_free_data(void* node_ref);
+inode_ref_t virtfs_create_root_inode(mountpoint_t* mp);

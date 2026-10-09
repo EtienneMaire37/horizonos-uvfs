@@ -105,8 +105,11 @@ int initrd_explore(vnode_ref_t vnode)
 }
 ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset)
 {
+    ASSERT(vnode.ptr);
     if (offset < 0) return EINVAL;
-    initrd_file_t* file = &initrd_files[*(size_t*)vnode.ptr->inode.ptr->fs_specific];
+    inode_ref_t inode = inode_stack_top_inode(&vnode.ptr->inodes);
+    initrd_file_t* file = &initrd_files[*(size_t*)inode.ptr->fs_specific];
+    inode_delete_ref(&inode);
     size_t filesize =    S_ISLNK(file->st.st_mode) ? strlen(file->link) :
                         (S_ISREG(file->st.st_mode) ? (size_t)file->st.st_size : 0);
     if ((size_t)offset >= filesize)
@@ -175,6 +178,7 @@ void initrd_init(const char* path)
             filetype = S_IFLNK;
             break;
         default:
+            LOG(ERROR, "Unsupported ustar file type in initrd (%d)", header.type);
             abort();
         }
         uint64_t mode = ustar_get_number((char*)header.mode, 8);
@@ -201,4 +205,29 @@ int initrd_create(const char* name, vnode_ref_t parent, struct stat* st, void** 
     (void)data;
     (void)free_data;
     return EROFS;
+}
+
+inode_ref_t initrd_create_root_inode(mountpoint_t* mp)
+{
+    mountpoint_ref_t mp_ref = (mountpoint_ref_t){ mp };
+    struct stat st;
+    st.st_atim = (struct timespec){ 0, 0 };
+    st.st_ctim = (struct timespec){ 0, 0 };
+    st.st_mtim = (struct timespec){ 0, 0 };
+    st.st_blksize = 4096;
+    st.st_blocks = 0;
+    st.st_rdev = 0;
+
+    st.st_gid = 0;
+    st.st_uid = 0;
+
+    st.st_ino = initrd_generate_ino();
+    st.st_mode = 0755 | S_IFDIR;
+
+    st.st_size = 0;
+
+    inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL, mp_ref);
+    if (!inode.ptr) return inode;
+    inode.ptr->st.st_nlink = 1;
+    return inode;
 }

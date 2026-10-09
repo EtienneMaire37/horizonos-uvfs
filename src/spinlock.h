@@ -16,6 +16,8 @@ typedef struct
 	atomic_flag flag;
 } spinlock_noint_t;
 
+extern uint32_t cpu_eflags;
+
 #define SPINLOCK_INIT         ((spinlock_t){ .flag = ATOMIC_FLAG_INIT })
 #define SPINLOCK_NOINT_INIT   ((spinlock_noint_t){ .flag = ATOMIC_FLAG_INIT })
 
@@ -42,6 +44,7 @@ static inline __attribute__((always_inline)) void release_spinlock(spinlock_t* s
 static inline __attribute__((always_inline)) uint32_t acquire_spinlock_noint(spinlock_noint_t* spinlock)
 {
 	acquire_spinlock((spinlock_t*)spinlock);
+	cpu_eflags = 0;
 	return 0;
 }
 
@@ -49,4 +52,5 @@ static inline __attribute__((always_inline)) void release_spinlock_noint(spinloc
 {
 	(void)flags;
 	release_spinlock((spinlock_t*)spinlock);
+	cpu_eflags = 1;
 }

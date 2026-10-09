@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-typedef uint8_t _Atomic vnode_flags_t;
+typedef uint8_t vnode_flags_t;
 
 #define VNODE_INIT         0x00
 

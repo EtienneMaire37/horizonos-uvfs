@@ -9,4 +9,4 @@ ssize_t initrd_read(vnode_ref_t vnode, void* buf, size_t count, off_t offset);
 ssize_t initrd_write(vnode_ref_t vnode, void* buf, size_t count, off_t offset);
 int initrd_create(const char* name, vnode_ref_t parent, struct stat* st, void** data, void (**free_data)(void*));
 void initrd_init(const char* path);
-
+inode_ref_t initrd_create_root_inode(mountpoint_t* mp);

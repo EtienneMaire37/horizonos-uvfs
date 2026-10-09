@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "inode_stack.h"
 #include "vnode.h"
 #include "inode.h"
 #include "log.h"
@@ -57,7 +58,7 @@ int main()
     ASSERT(sizeof(vnode_ref_t) == sizeof(uintptr_t));
     initrd_init("./resources/initrd.tar");
     vfs_create_root_node();
-    LOG(DEBUG, "Mounting initrd at root");
+    LOG(DEBUG, "Mounting root");
     errno = vfs_mount(vfs_root_node, (vnode_ref_t){ NULL }, "virt");
     if (errno)
         perror("Couldn't mount root");
@@ -99,9 +100,10 @@ int main()
                 perror("Couldn't read vnode");
                 continue;                    
             }
-            printf("Inode: %lu\n", (unsigned long)node.ptr->inode.ptr->st.st_ino);
-            printf("Mode: %#o\n", (unsigned int)node.ptr->inode.ptr->st.st_mode);
-            printf("Uid: %u\tGid: %u\n", (unsigned int)node.ptr->inode.ptr->st.st_uid, (unsigned int)node.ptr->inode.ptr->st.st_gid);
+            struct stat st = vnode_stat(node);
+            printf("Inode: %lu\n", (unsigned long)st.st_ino);
+            printf("Mode: %#o\n", (unsigned int)st.st_mode);
+            printf("Uid: %u\tGid: %u\n", (unsigned int)st.st_uid, (unsigned int)st.st_gid);
             vnode_delete_ref(&node);
         }
         else if (strcmp(action, "tree") == 0)
@@ -250,5 +252,7 @@ int main()
         else
             printf("Invalid action\n");
         vfs_verify_tree_integrity();
+        if (!cpu_eflags)
+            LOG(FATAL, "A SPINLOCK WAS NOT RELEASED");
     }
 }

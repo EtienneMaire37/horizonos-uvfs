@@ -12,19 +12,27 @@ ino_t virtfs_generate_ino()
     return num++;
 }
 
+// NULL mountpoint if we mount something on a virtfs mountpoint then unmount
+// FIXME
 int virtfs_explore(vnode_ref_t vnode)
 {
-    char path[PATH_MAX];
-    vfs_get_relative_path_to_node_from_mountpoint(vnode, path, sizeof(path));
-    int _errno;
-    vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ vnode.ptr->mountpoint.ptr->data }, (vnode_ref_t){ NULL }, false);
-    if (!node.ptr) return _errno;
-    vnode_move_reference(&node, children);
-    while (node.ptr)
-    {
-        vfs_add_new_child_node__hardlink(vnode, node.ptr->name, node.ptr->inode, false);
-        vnode_move_reference(&node, next);
-    }
+    // char path[PATH_MAX];
+    // vfs_get_relative_path_to_node_from_mountpoint(vnode, path, sizeof(path));
+    // int _errno;
+    // mountpoint_ref_t mp = inode_stack_top_mountpoint(&vnode.ptr->inodes);
+    // vnode_ref_t root = { mp.ptr->data };
+    // mountpoint_delete_ref(&mp);
+    // vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, root, (vnode_ref_t){ NULL }, false);
+    // if (!node.ptr) return _errno;
+    // vnode_move_reference(&node, children);
+    // while (node.ptr)
+    // {
+    //     inode_ref_t inode = inode_stack_top_inode(&node.ptr->inodes);
+    //     vfs_add_new_child_node__hardlink(vnode, node.ptr->name, inode, false);
+    //     inode_delete_ref(&inode);
+    //     vnode_move_reference(&node, next);
+    // }
+    (void)vnode;
     
     return 0;
 }
@@ -49,15 +57,21 @@ int virtfs_create(const char* name, vnode_ref_t parent, struct stat* st, void** 
 {
     (void)data;
     (void)free_data;
-    char path[PATH_MAX];
-    vfs_get_relative_path_to_node_from_mountpoint(parent, path, sizeof(path));
-    int _errno;
-    vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, (vnode_ref_t){ parent.ptr->mountpoint.ptr->data }, (vnode_ref_t){ NULL }, false);
-    if (!node.ptr) return _errno;
-    LOG(TRACE, "Adding new node \"%s\"", name);
-    st->st_ino = virtfs_generate_ino();
-    vfs_add_new_child_node(node, name, st, NULL, NULL);
-    vnode_delete_ref(&node);
+    // char path[PATH_MAX];
+    // vfs_get_relative_path_to_node_from_mountpoint(parent, path, sizeof(path));
+    // int _errno;
+    // mountpoint_ref_t mp = inode_stack_top_mountpoint(&parent.ptr->inodes);
+    // vnode_ref_t root = { mp.ptr->data };
+    // mountpoint_delete_ref(&mp);
+    // vnode_ref_t node = vfs_get_vnode_from_path(&_errno, 0, 0, path, root, (vnode_ref_t){ NULL }, false);
+    // if (!node.ptr) return _errno;
+    // LOG(TRACE, "Adding new node \"%s\"", name);
+    // st->st_ino = virtfs_generate_ino();
+    // vfs_add_new_child_node(node, name, st, NULL, NULL);
+    // vnode_delete_ref(&node);
+    (void)name;
+    (void)parent;
+    (void)st;
     return 0;
 }
 
@@ -70,7 +84,7 @@ vnode_t* virtfs_create_data()
     struct stat st = {0};
     st.st_mode = S_IFDIR;
 
-    inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL);
+    inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL, (mountpoint_ref_t){ NULL });
     vnode_ref_t ref = vfs_create_new_vnode("virtfs_root", inode, false);
     inode_delete_ref(&inode);
     return ref.ptr;
@@ -81,4 +95,30 @@ void virtfs_free_data(void* node_ref)
     vnode_ref_t ref = { node_ref };
     vfs_unload_children(ref);
     vnode_delete_ref(&ref);
+}
+
+inode_ref_t virtfs_create_root_inode(mountpoint_t* mp)
+{
+    mountpoint_ref_t mp_ref = (mountpoint_ref_t){ mp };
+    struct stat st;
+    st.st_atim = (struct timespec){ 0, 0 };
+    st.st_ctim = (struct timespec){ 0, 0 };
+    st.st_mtim = (struct timespec){ 0, 0 };
+    st.st_blksize = 4096;
+    st.st_blocks = 0;
+    st.st_rdev = 0;
+
+    st.st_gid = 0;
+    st.st_uid = 0;
+
+    st.st_ino = virtfs_generate_ino();
+    st.st_mode = 0755 | S_IFDIR;
+
+    st.st_nlink = 1;
+    st.st_size = 0;
+
+    inode_ref_t inode = vfs_create_new_inode(&st, NULL, NULL, mp_ref);
+    if (!inode.ptr) return inode;
+    inode.ptr->st.st_nlink = 1;
+    return inode;
 }

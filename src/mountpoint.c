@@ -24,7 +24,6 @@ mountpoint_ref_t mountpoint_copy_ref(mountpoint_ref_t ref)
 
 void ___mountpoint_free(const struct ref* ref)
 {
-    LOG(TRACE, "Freeing mountpoint");
     mountpoint_t* mountpoint = container_of(ref, mountpoint_t, ref);
     void (*free_data)(void* data) = mountpoint->free_data;
     if (free_data)

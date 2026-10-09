@@ -22,6 +22,7 @@ struct mountpoint
     int busy;
 
     ino_t (*generate_ino)();
+    inode_ref_t (*create_root_inode)(mountpoint_t*);
 
     int (*explore)(vnode_ref_t); 
     ssize_t (*read)(vnode_ref_t, void*, size_t, off_t); 
