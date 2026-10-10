@@ -133,6 +133,11 @@ int vfs_close(int fd)
     release_spinlock_noint(&lock, eflags);
     return ret;
 }
+void vfs_close_all()
+{
+    for (int i = 0; i < OFDT_ENTRIES; i++)
+        vfs_close(i);
+}
 int vfs_open(const char* path, int flags, mode_t mode,
              uid_t euid, gid_t egid,
              vnode_ref_t root, vnode_ref_t cwd,

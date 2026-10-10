@@ -45,5 +45,6 @@ int vfs_open(const char* path, int flags, mode_t mode,
              vnode_ref_t root, vnode_ref_t cwd,
              mode_t umask);
 int vfs_close(int fd);
+void vfs_close_all();
 
 void vfs_log_thread_fds();

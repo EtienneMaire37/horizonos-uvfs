@@ -244,7 +244,7 @@ int vfs_unmount(vnode_ref_t ref, bool lazy)
     if (!mp.ptr)
     {
         release_spinlock_noint(&ref.ptr->lock, flags);
-        return 0;
+        return EINVAL;
     }
     if (mp.ptr->root.ptr != ref.ptr)
     {
@@ -293,6 +293,7 @@ void ___vnode_free(const struct ref* _ref)
         inode_delete_ref(&inode);
         inode = inode_stack_pop(&node->inodes);
     }
+    free(node->inodes.data);
     free(node->name);
     free(node);
     vfs_total_nodes--;

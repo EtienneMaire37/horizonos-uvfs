@@ -8,6 +8,15 @@ export CC := gcc
 SOURCE_CU := $(shell find src -name '*.c')
 SOURCE := $(shell find src -name '*.h') $(SOURCE_CU)
 
-bin/uvfs-test: $(SOURCE) Makefile
+.PHONY: valdebug debug release all
+all: release
+
+valdebug: $(SOURCE) Makefile
 	mkdir -p bin
-	${CC} -fanalyzer -fsanitize=undefined,address,leak -g -Og -march=native -Wall -Wextra -Wno-missing-field-initializers -Werror -o $@ $(SOURCE_CU) ${CFLAGS}
+	${CC} -Og -g -march=native -Wall -Wextra -Wno-missing-field-initializers -Werror -o bin/uvfs-test $(SOURCE_CU) ${CFLAGS}
+debug: $(SOURCE) Makefile
+	mkdir -p bin
+	${CC} -fanalyzer -fsanitize=address,undefined,leak -g -Og -march=native -Wall -Wextra -Wno-missing-field-initializers -Werror -o bin/uvfs-test $(SOURCE_CU) ${CFLAGS}
+release: $(SOURCE) Makefile
+	mkdir -p bin
+	${CC} -O3 -DNDEBUG -march=native -Wall -Wextra -Wno-missing-field-initializers -o bin/uvfs-test $(SOURCE_CU) ${CFLAGS}

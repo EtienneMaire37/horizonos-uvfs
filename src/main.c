@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 #include "inode_stack.h"
+#include "mountpoint_ref.h"
 #include "vnode.h"
 #include "inode.h"
 #include "log.h"
@@ -56,6 +57,7 @@ static inline char* get_input(char* buf, size_t bytes)
 int main()
 {
     ASSERT(sizeof(vnode_ref_t) == sizeof(uintptr_t));
+
     initrd_init("./resources/initrd.tar");
     vfs_create_root_node();
     LOG(DEBUG, "Mounting root");
@@ -85,12 +87,15 @@ int main()
     errno = vfs_create("tmp", vfs_root_node, 01777 | S_IFDIR, 0, 0);
     if (errno)
         perror("Couldn't create /tmp");
+
     while (true)
     {
         char path[PATH_MAX], action[64];
-        printf("Action? (\n\tstat: stat node,\n\ttree: get tree from node,\n\tunload: unload children,\n\tmount: mount filesystem,\n\tunmount: unmount filesystem,\n\tread: print file contents,\n\tcreate: create empty file,\n\tmkdir: create folder,\n\texplore: explore folder,\n\tfds: list open file descriptors,\n\topen: open a new open file descriptor pointing to a file,\n\tclose: close a file descriptor) ");
+        printf("Action? (\n\tquit: quit program,\n\tstat: stat node,\n\ttree: get tree from node,\n\tunload: unload children,\n\tmount: mount filesystem,\n\tunmount: unmount filesystem,\n\tread: print file contents,\n\tcreate: create empty file,\n\tmkdir: create folder,\n\texplore: explore folder,\n\tfds: list open file descriptors,\n\topen: open a new open file descriptor pointing to a file,\n\tclose: close a file descriptor) ");
         char* ret = get_input(action, sizeof(action));
         check_input(ret);
+        if (strcmp(action, "quit") == 0)
+            break;
         if (strcmp(action, "stat") == 0)
         {
             get_node()
@@ -255,4 +260,7 @@ int main()
         if (!cpu_eflags)
             LOG(FATAL, "A SPINLOCK WAS NOT RELEASED");
     }
+    vfs_close_all();
+    while (!vfs_unmount(vfs_root_node, false));
+    vnode_delete_ref(&vfs_root_node);
 }

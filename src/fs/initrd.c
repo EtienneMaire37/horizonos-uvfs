@@ -195,6 +195,16 @@ void initrd_init(const char* path)
     close(fd);
 }
 
+void __attribute__((destructor)) initrd_free()
+{
+    for (size_t i = 0; i < initrd_file_count; i++)
+    {
+        free(initrd_files[i].data);
+        free(initrd_files[i].link);
+        free(initrd_files[i].name);
+    }
+}
+
 int initrd_create(const char* name, vnode_ref_t parent, struct stat* st, void** data, void (**free_data)(void*))
 {
     (void)name;
