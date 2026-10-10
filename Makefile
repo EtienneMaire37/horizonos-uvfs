@@ -1,15 +1,12 @@
-.PHONY: all clean
-all: bin/uvfs-test
-clean:
-	rm -rf bin
-
 export CC := gcc
 
 SOURCE_CU := $(shell find src -name '*.c')
 SOURCE := $(shell find src -name '*.h') $(SOURCE_CU)
 
-.PHONY: valdebug debug release all
+.PHONY: valdebug debug release all clean
 all: release
+clean:
+	rm -rf bin
 
 valdebug: $(SOURCE) Makefile
 	mkdir -p bin
